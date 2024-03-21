@@ -2,7 +2,7 @@
 name = "inat_fetcher"
 version = "0.0.1"
 description = "test"
-authors = ["Edouard Brülhart <fedouard.bruelhart@unifr.ch>"]
+authors = ["Edouard Brülhart <edouard.bruelhart@unifr.ch>"]
 repository = "https://github.com/digital-botanical-gardens-initiative/inat-fetcher"
 documentation = "https://digital-botanical-gardens-initiative.github.io/inat-fetcher/"
 readme = "README.md"
@@ -11,7 +11,7 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.8,<4.0"
+python = ">=3.9,<4.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.0"
