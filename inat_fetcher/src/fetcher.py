@@ -1,4 +1,4 @@
-from pyinaturalist import *
+from pyinaturalist import get_observations
 from dotenv import load_dotenv
 from pathlib import Path
 import os
@@ -19,6 +19,13 @@ path_to_output_file = os.path.join(data_out_path, output_filename + "." + filena
 
 # Import env variable
 access_token=os.getenv('ACCESS_TOKEN')
+
+response = get_observations(
+    project_id=130644,
+    page='all',
+    per_page=300,
+    #access_token=access_token
+)
 
 
 
