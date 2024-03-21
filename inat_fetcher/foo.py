@@ -15,3 +15,5 @@ def foo() -> str:
 
 if __name__ == "__main__":  # pragma: no cover
     pass
+
+print("finished to debug poetry")
