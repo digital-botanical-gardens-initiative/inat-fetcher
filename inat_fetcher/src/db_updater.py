@@ -1,0 +1,1 @@
+print("correctly launched dbupdater")
