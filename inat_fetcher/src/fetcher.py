@@ -15,13 +15,13 @@ load_dotenv()
 p = Path(__file__).parents[1]
 
 # Set up paths and filenames
-data_out_path = "/data/out/"
-output_filename = "inat_observations"
+data_in_path = "/data/in/"
+output_filename = "inat_observations_raw"
 filename_suffix = "csv"
-path_to_output_file = os.path.join(str(p) + data_out_path, output_filename + "." + filename_suffix)
+path_to_output_file = os.path.join(str(p) + data_in_path, output_filename + "." + filename_suffix)
 
 # import env variable
-access_token = os.getenv("ACCESS_TOKEN")
+access_token = os.getenv("INATURALIST_ACCESS_TOKEN")
 
 response = get_observations(project_id=130644, page="all", per_page=200, access_token=access_token)
 df = to_dataframe(response)
@@ -35,17 +35,7 @@ first_column = df.pop("id")
 # first_column) function
 df.insert(0, "id", first_column)
 
-# formatting of data
-# format_module.location_formatting(df,'location','swiped_loc')
-# format_module.dbgi_id_extract(df)
-
 # We keep the table
 df.to_csv(path_to_output_file, index=False)
 
-
-# update the database using db_updater.py script
-if os.path.exists(path_to_output_file):
-    print("path: ${path_to_output_file}")
-    # db_updater
-else:
-    print("csv generation error")
+print("csv correctly written")
