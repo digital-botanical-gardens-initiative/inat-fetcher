@@ -1,9 +1,0 @@
-import fetcher
-import location_formatter
-import emi_id_extracter
-import db_updater
-
-fetcher
-location_formatter
-emi_id_extracter
-db_updater

@@ -1,7 +1,7 @@
-import numpy as np
-import pandas as pd
-from pathlib import Path
 import os
+from pathlib import Path
+
+import pandas as pd
 
 # To obtain actual path to inat_fetcher dir
 p = Path(__file__).parents[1]
@@ -17,11 +17,11 @@ path_to_output_file = os.path.join(str(p) + data_in_path, output_filename + "." 
 # Load dataframe
 df = pd.read_csv(path_to_input_file)
 
- # Create a new column with all values initialized to 'NA'
-df['swiped_loc'] = 'NA'
+# Create a new column with all values initialized to 'NA'
+df["swiped_loc"] = "NA"
 
 # Use the apply method to process each row in the dataframe
-df['swiped_loc'] = df['location'].apply(lambda x:  tuple(map(float, x.strip('[]').split(',')))[::-1])
+df["swiped_loc"] = df["location"].apply(lambda x: tuple(map(float, x.strip("[]").split(",")))[::-1])
 
 # We keep the table
 df.to_csv(path_to_output_file, index=False)
