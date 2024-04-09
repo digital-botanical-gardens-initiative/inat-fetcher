@@ -35,8 +35,8 @@ for i in range(len(df)):
         df.loc[i, "emi_external_id"] = str(df["ofvs.15466"][i])
 
 # Split dataframe based on emi_external_id column matching the pattern
-pattern_matched_df = df[df["emi_external_id"].str.match(pattern)]
-pattern_unmatched_df = df[~df["emi_external_id"].str.match(pattern)]
+pattern_matched_df = df[df["emi_external_id"].str.match(str(pattern))]
+pattern_unmatched_df = df[~df["emi_external_id"].str.match(str(pattern))]
 
 # We keep the tables
 pattern_matched_df.to_csv(path_to_output_file, index=False)

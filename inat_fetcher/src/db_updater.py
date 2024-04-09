@@ -1,4 +1,3 @@
-import json
 import os
 
 import requests
@@ -9,10 +8,10 @@ load_dotenv()
 
 # Define the Directus instance, mail and password from .env
 directus_instance = os.getenv("DIRECTUS_INSTANCE")
-directus_login = directus_instance + "/auth/login"
+directus_login = f"{directus_instance}/auth/login"
 # Define the collection name
 collection_name = "inaturalist_data"
-directus_api = directus_instance + "/items/" + collection_name
+directus_api = f"{directus_instance}/items/{collection_name}"
 directus_email = os.getenv("DIRECTUS_EMAIL")
 directus_password = os.getenv("DIRECTUS_PASSWORD")
 
@@ -25,11 +24,11 @@ if response.status_code == 200:
     # Stores the access token
     data = response.json()["data"]
     directus_token = data["access_token"]
+    print("connection succeed")
 
 # Define the fields to create
 fields = [
-    {"field": "id", "type": "numeric"},
-    {"field": "quality_grade", "type": "string", "length": 25},
+    {"field": "quality_grade", "type": "str"},
     {"field": "time_observed_at", "type": "datetime"},
     {"field": "taxon_geoprivacy", "type": "string", "length": 25},
     {"field": "annotations", "type": "string", "length": 25},
@@ -177,11 +176,11 @@ payload = {"fields": fields}
 headers = {"Authorization": f"Bearer {directus_token}", "Content-Type": "application/json"}
 
 # Construct the API endpoint for creating fields
-endpoint = f"{DIRECTUS_URL}/tables/{COLLECTION_NAME}/fields"
+endpoint = f"{directus_instance}/items/{collection_name}"
+print(endpoint)
 
 # Send the POST request to create the fields
-response = requests.post(endpoint, headers=headers, data=json.dumps(payload))
-
+response = requests.post(endpoint, headers=headers, json={"field": "test", "type": "str"}, timeout=10)
 # Check if the request was successful
 if response.status_code == 200:
     print("Fields created successfully.")
