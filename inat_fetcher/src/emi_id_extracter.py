@@ -1,8 +1,8 @@
 import os
+import re
 from pathlib import Path
 
 import pandas as pd
-import re
 
 # To obtain actual path to inat_fetcher dir
 p = Path(__file__).parents[1]
@@ -32,7 +32,7 @@ for i in range(len(df)):
         cleaned_string = str.replace(df.tags[i][2:-2], "emi_external_id:", "")
         df.loc[i, "emi_external_id"] = cleaned_string
     elif df["ofvs.15466"][i] != "":
-        df.loc[i, "emi_external_id"] = str(df['ofvs.15466'][i])
+        df.loc[i, "emi_external_id"] = str(df["ofvs.15466"][i])
 
 # Split dataframe based on emi_external_id column matching the pattern
 pattern_matched_df = df[df["emi_external_id"].str.match(pattern)]

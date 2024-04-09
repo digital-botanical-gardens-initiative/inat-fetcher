@@ -1,13 +1,30 @@
+import json
+import os
 
 import requests
-import json
+from dotenv import load_dotenv
 
-# Define the Directus API endpoint and authentication token
-DIRECTUS_URL = "https://your-directus-instance.com/api/1.1"
-AUTH_TOKEN = "your-auth-token"
+# Loads .env variables
+load_dotenv()
 
+# Define the Directus instance, mail and password from .env
+directus_instance = os.getenv("DIRECTUS_INSTANCE")
+directus_login = directus_instance + "/auth/login"
 # Define the collection name
-COLLECTION_NAME = "your_collection_name"
+collection_name = "inaturalist_data"
+directus_api = directus_instance + "/items/" + collection_name
+directus_email = os.getenv("DIRECTUS_EMAIL")
+directus_password = os.getenv("DIRECTUS_PASSWORD")
+
+# Create a session object for making requests
+session = requests.Session()
+# Send a POST request to the login endpoint
+response = session.post(directus_login, json={"email": directus_email, "password": directus_password})
+# Test if connection is successful
+if response.status_code == 200:
+    # Stores the access token
+    data = response.json()["data"]
+    directus_token = data["access_token"]
 
 # Define the fields to create
 fields = [
@@ -157,7 +174,7 @@ fields = [
 payload = {"fields": fields}
 
 # Construct headers with authentication token
-headers = {"Authorization": f"Bearer {AUTH_TOKEN}", "Content-Type": "application/json"}
+headers = {"Authorization": f"Bearer {directus_token}", "Content-Type": "application/json"}
 
 # Construct the API endpoint for creating fields
 endpoint = f"{DIRECTUS_URL}/tables/{COLLECTION_NAME}/fields"
