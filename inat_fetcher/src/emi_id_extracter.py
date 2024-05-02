@@ -1,8 +1,8 @@
 import os
-import re
 from pathlib import Path
 
 import pandas as pd
+import requests
 
 # To obtain actual path to inat_fetcher dir
 p = Path(__file__).parents[1]
@@ -17,7 +17,19 @@ filename_suffix = ".csv"
 path_to_input_file = os.path.join(str(p) + data_in_path, input_filename + filename_suffix)
 path_to_output_file = os.path.join(str(p) + data_out_path, output_filename + filename_suffix)
 path_to_recovery_file = os.path.join(str(p) + data_out_path, recovery_filename + filename_suffix)
-pattern = re.compile(r"dbgi_\d{6}")
+
+# Request to directus to obtain projects codes
+collection_url = "http://directus.dbgi.org/items/EMI_codes"
+column = "emi_code"
+params = {"sort[]": f"{column}"}
+session = requests.Session()
+response = session.get(collection_url, params=params)
+data = response.json()["data"]
+project_names = [item[column] for item in data]
+
+# Aggregate patterns
+pattern = "(" + "|".join(project_names) + ")_[0-9]{6}"
+pattern_all = "(" + "|".join(project_names) + ")_[0-9]{6}|dbgi_spl_[0-9]{6}"
 
 # Load dataframe
 df = pd.read_csv(path_to_input_file)
@@ -35,8 +47,10 @@ for i in range(len(df)):
         df.loc[i, "emi_external_id"] = str(df["ofvs.15466"][i])
 
 # Split dataframe based on emi_external_id column matching the pattern
-pattern_matched_df = df[df["emi_external_id"].str.match(str(pattern))]
-pattern_unmatched_df = df[~df["emi_external_id"].str.match(str(pattern))]
+
+pattern_matched_df = df[df["emi_external_id"].str.match(str(pattern_all))]
+pattern_matched_df["emi_external_id"] = pattern_matched_df["emi_external_id"].replace(r"dbgi_spl_", "dbgi_", regex=True)
+pattern_unmatched_df = df[~df["emi_external_id"].str.match(str(pattern_all))]
 
 # We keep the tables
 pattern_matched_df.to_csv(path_to_output_file, index=False)
