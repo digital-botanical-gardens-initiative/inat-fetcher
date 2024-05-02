@@ -11,9 +11,6 @@ scripts_folder = "/src/"
 path_to_scripts = os.path.join(str(p) + scripts_folder)
 
 # Run fetcher
-subprocess.run(["touch", f"{path_to_scripts}test.txt"]).check_returncode()
-
-# Run fetcher
 subprocess.run(["python3", f"{path_to_scripts}fetcher.py"]).check_returncode()
 
 # Run location formatter
