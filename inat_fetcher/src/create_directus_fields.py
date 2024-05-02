@@ -95,7 +95,7 @@ for i in observation:
     # Create a field for each csv column
     data = {"field": col_clean, "type": dir_type}
     # Make directus request
-    response = requests.post(url, json=data, headers=headers, timeout=0.1)
+    response = requests.post(url, json=data, headers=headers, timeout=10)
     # Check if adding is success
     if response.status_code == 200:
         print("yes")
@@ -103,5 +103,6 @@ for i in observation:
     elif response.status_code == 400:
         print("field already created")
     else:
+        print(response.status_code)
         print(dir_type)
         print(col_clean)
