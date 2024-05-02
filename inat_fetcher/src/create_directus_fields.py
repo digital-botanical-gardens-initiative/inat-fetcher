@@ -31,9 +31,10 @@ if response.status_code == 200:
     directus_token = data["access_token"]
 
     # Construct headers with authentication token
-    headers = {"Authorization": f"Bearer {directus_token}", 
-               "Content-Type": "application/json",
-               }
+    headers = {
+        "Authorization": f"Bearer {directus_token}",
+        "Content-Type": "application/json",
+    }
 
 # To obtain actual path to inat_fetcher dir
 p = Path(__file__).parents[1]
@@ -57,13 +58,13 @@ observation = {}
 # Loop over the columns to create the dict
 for col_name in df.columns:
     # Replace dots with underscores in field names
-    new_col_name = col_name.replace('.', '_')
+    new_col_name = col_name.replace(".", "_")
     # Add to the dictionary
     observation[new_col_name] = col_name
 
     # Find the longest content in the column
     longest = df[col_name].astype(str).apply(len).max()
-    
+
     # Store the longest content for the column
     longest_content[new_col_name] = longest
 
@@ -72,19 +73,19 @@ for i in observation:
     col_init = str.replace(str(observation[i]), "['", "")
     col = str.replace(col_init, "']", "")
     col_clean = str.replace(col, ".", "_")
-    type = str(df[col].dtype)
+    df_type = str(df[col].dtype)
 
     # Replace types to match directus ones
-    if type == "object" and longest_content[i] < threshold:
-        type = "string"
-    elif type == "int64" and longest_content[i] < threshold:
-        type = "integer"
-    elif type == "bool" and longest_content[i] < threshold:
-        type = "boolean"
-    elif type == "float64" and longest_content[i] < threshold:
-        type = "float"
+    if df_type == "object" and longest_content[i] < threshold:
+        dir_type = "string"
+    elif df_type == "int64" and longest_content[i] < threshold:
+        dir_type = "integer"
+    elif df_type == "bool" and longest_content[i] < threshold:
+        dir_type = "boolean"
+    elif df_type == "float64" and longest_content[i] < threshold:
+        dir_type = "float"
     elif longest_content[i] >= threshold:
-        type = "text"
+        dir_type = "text"
     else:
         # If type is not handled by the ones already made, print it so we can integrate it easily
         print(f"not handled type: {type}")
@@ -92,11 +93,9 @@ for i in observation:
     # Construct directus url
     url = f"{directus_instance}/fields/{collection_name}"
     # Create a field for each csv column
-    data = {"field": col_clean,
-            "type": type
-            }
+    data = {"field": col_clean, "type": dir_type}
     # Make directus request
-    response = requests.post(url, json=data, headers=headers)
+    response = requests.post(url, json=data, headers=headers, timeout=0.1)
     # Check if adding is success
     if response.status_code == 200:
         print("yes")
@@ -104,5 +103,5 @@ for i in observation:
     elif response.status_code == 400:
         print("field already created")
     else:
-        print(type)
+        print(dir_type)
         print(col_clean)
