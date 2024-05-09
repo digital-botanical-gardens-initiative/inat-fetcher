@@ -56,4 +56,4 @@ pattern_unmatched_df = df[~df["emi_external_id"].str.match(str(pattern_all))]
 pattern_matched_df.to_csv(path_to_output_file, index=False)
 pattern_unmatched_df.to_csv(path_to_recovery_file, index=False)
 
-print("csvs correctly updated")
+print("csv correctly updated")
