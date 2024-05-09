@@ -68,12 +68,14 @@ for col_name in df.columns:
     # Store the longest content for the column
     longest_content[new_col_name] = longest
 
+
 # Request directus to create the columns
 for i in observation:
     col_init = str.replace(str(observation[i]), "['", "")
     col = str.replace(col_init, "']", "")
     col_clean = str.replace(col, ".", "_")
     df_type = str(df[col].dtype)
+    df_col_name = df[col].name
 
     # Replace types to match directus ones
     if df_type == "object" and longest_content[i] < threshold:
@@ -84,11 +86,14 @@ for i in observation:
         dir_type = "boolean"
     elif df_type == "float64" and longest_content[i] < threshold:
         dir_type = "float"
+    elif df_col_name == "geojson.coordinates" or df_col_name == "swiped_loc":
+        dir_type = "geometry.Point"
     elif longest_content[i] >= threshold:
         dir_type = "text"
     else:
         # If type is not handled by the ones already made, print it so we can integrate it easily
         print(f"not handled type: {type}")
+        
 
     # Construct directus url
     url = f"{directus_instance}/fields/{collection_name}"
