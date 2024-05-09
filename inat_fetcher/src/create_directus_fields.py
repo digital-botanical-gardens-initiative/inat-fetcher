@@ -75,7 +75,7 @@ for i in observation:
     col = str.replace(col_init, "']", "")
     col_clean = str.replace(col, ".", "_")
     df_type = str(df[col].dtype)
-    df_col_name = df[col].name
+    df_col_name = str(df[col].name)
 
     # Replace types to match directus ones
     if df_type == "object" and longest_content[i] < threshold:
