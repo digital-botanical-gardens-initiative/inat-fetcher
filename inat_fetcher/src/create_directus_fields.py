@@ -6,7 +6,8 @@ import requests
 from dotenv import load_dotenv
 
 # Loads .env variables
-load_dotenv()
+load_dotenv('/Users/pma/Dropbox/git_repos/COMMONS_Lab/DBGI/inat-fetcher/inat_fetcher/src/.env')
+
 
 # Define the Directus instance, mail and password from .env
 directus_instance = os.getenv("DIRECTUS_INSTANCE")
@@ -78,6 +79,7 @@ for i in observation:
     df_col_name = str(df[col].name)
 
     # Replace types to match directus ones
+
     if df_type == "object" and longest_content[i] < threshold:
         dir_type = "string"
     elif df_type == "int64" and longest_content[i] < threshold:
@@ -86,14 +88,18 @@ for i in observation:
         dir_type = "boolean"
     elif df_type == "float64" and longest_content[i] < threshold:
         dir_type = "float"
-    elif df_col_name == "geojson.coordinates" or df_col_name == "swiped_loc":
-        dir_type = "geometry.Point"
     elif longest_content[i] >= threshold:
         dir_type = "text"
     else:
         # If type is not handled by the ones already made, print it so we can integrate it easily
         print(f"not handled type: {type}")
-        
+    if df_col_name == "geojson.coordinates" or df_col_name == "swiped_loc":
+        dir_type = "geometry.Point"
+        print(f"column name: {df_col_name}")
+        print(f"dir type: {dir_type}")
+
+    # Print the column name and the dir type
+      
 
     # Construct directus url
     url = f"{directus_instance}/fields/{collection_name}"
