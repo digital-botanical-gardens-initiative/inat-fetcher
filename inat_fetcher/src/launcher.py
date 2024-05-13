@@ -14,9 +14,9 @@ path_to_scripts = os.path.join(str(p) + scripts_folder)
 print("Running fetcher")
 subprocess.run(["python3", f"{path_to_scripts}fetcher.py"]).check_returncode()
 
-# Run location formatter
-print("Running location formatter")
-subprocess.run(["python3", f"{path_to_scripts}location_formatter.py"]).check_returncode()
+# # Run location formatter
+# print("Running location formatter")
+# subprocess.run(["python3", f"{path_to_scripts}location_formatter.py"]).check_returncode()
 
 # Run emi id extracter
 print("Running emi id extracter")

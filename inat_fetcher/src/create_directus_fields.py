@@ -93,13 +93,10 @@ for i in observation:
     else:
         # If type is not handled by the ones already made, print it so we can integrate it easily
         print(f"not handled type: {type}")
-    if df_col_name == "geojson.coordinates" or df_col_name == "swiped_loc":
+    if df_col_name == "geojson.coordinates":
         dir_type = "geometry.Point"
-        print(f"column name: {df_col_name}")
-        print(f"dir type: {dir_type}")
 
     # Print the column name and the dir type
-      
 
     # Construct directus url
     url = f"{directus_instance}/fields/{collection_name}"

@@ -34,14 +34,14 @@ if response.status_code == 200:
     # Send the get request to create or update the fields
     response = session.get(url=f"{directus_api}?limit=-1", headers=headers)
     data = response.json()["data"]
-    id = [item["id"] for item in data]
+    item_id = [item["id"] for item in data]
     emi_id = [item["emi_external_id"] for item in data]
-    for i in range(len(id)):
+    for i in range(len(item_id)):
         directus_patch = f"{directus_instance}/items/Field_Samples/" + emi_id[i]
-        inaturalist_link = "https://www.inaturalist.org/observations/" + id[i]
-        observation = {"inat_observation_id": id[i], "inaturalist_link": inaturalist_link}
+        inaturalist_link = "https://www.inaturalist.org/observations/" + item_id[i]
+        observation = {"inat_observation_id": item_id[i], "inaturalist_link": inaturalist_link}
         response = session.patch(url=directus_patch, headers=headers, json=observation)
         if response.status_code != 200:
-            print(f"error, couldn't make the link between {id[i]} and {emi_id[i]}")
+            print(f"error, couldn't make the link between {item_id[i]} and {emi_id[i]}")
             print(response.status_code)
             print(response.text)

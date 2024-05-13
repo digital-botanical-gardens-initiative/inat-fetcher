@@ -10,7 +10,7 @@ p = Path(__file__).parents[1]
 # Set up paths and filenames
 data_in_path = "/data/in/"
 data_out_path = "/data/out/"
-input_filename = "inat_observations_loc"
+input_filename = "inat_observations_raw"
 output_filename = "inat_observations_treated"
 recovery_filename = "inat_observation_recovery"
 filename_suffix = ".csv"

@@ -37,6 +37,8 @@ session = requests.Session()
 # Send a POST request to the login endpoint
 response = session.post(directus_login, json={"email": directus_email, "password": directus_password})
 
+geo_prefix = '"type":"Point","coordinates":'
+
 # Test if connection is successful
 if response.status_code == 200:
     # Stores the access token
@@ -68,7 +70,10 @@ if response.status_code == 200:
 
         # Update the observation dictionary with values from the current row
         for col_name, value in obs.items():
-            observation[col_name.replace(".", "_")] = value
+            if col_name == "geojson.coordinates":
+                observation[col_name.replace(".", "_")] = "{" + geo_prefix + value + "}"
+            else:
+                observation[col_name.replace(".", "_")] = value
 
         # Send the POST request to create or update the fields
         response = session.post(url=directus_api, headers=headers, json=observation)

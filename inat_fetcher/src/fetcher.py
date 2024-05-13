@@ -2,14 +2,11 @@ import os
 from pathlib import Path
 
 # import db_updater
-from dotenv import load_dotenv
 from pyinaturalist import get_observations
 from pyinaturalist_convert import to_dataframe
 
 # import format_module
 
-# Loads .env variables
-load_dotenv()
 
 # To obtain actual path to inat_fetcher dir
 p = Path(__file__).parents[1]
