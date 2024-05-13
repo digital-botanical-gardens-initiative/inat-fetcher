@@ -6,7 +6,7 @@ import requests
 from dotenv import load_dotenv
 
 # Loads .env variables
-load_dotenv('/Users/pma/Dropbox/git_repos/COMMONS_Lab/DBGI/inat-fetcher/inat_fetcher/src/.env')
+load_dotenv()
 
 
 # Define the Directus instance, mail and password from .env
