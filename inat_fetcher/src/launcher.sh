@@ -7,9 +7,9 @@ scripts_folder="/src/"
 path_to_scripts="${p}${scripts_folder}"
 
 # Create necessary directories if they don't exist
-mkdir -p "${path_to_scripts}/data"
-mkdir -p "${path_to_scripts}/data/in"
-mkdir -p "${path_to_scripts}/data/out"
+mkdir -p "${p}/data"
+mkdir -p "${p}/data/in"
+mkdir -p "${p}/data/out"
 
 # Function to run a script and check its return code
 run_script() {
