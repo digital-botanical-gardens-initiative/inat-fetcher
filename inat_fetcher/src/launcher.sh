@@ -6,6 +6,11 @@ p=$(dirname $(dirname $(realpath $0)))
 scripts_folder="/src/"
 path_to_scripts="${p}${scripts_folder}"
 
+# Create necessary directories if they don't exist
+mkdir -p "${path_to_scripts}/data"
+mkdir -p "${path_to_scripts}/data/in"
+mkdir -p "${path_to_scripts}/data/out"
+
 # Function to run a script and check its return code
 run_script() {
     script_name=$1
