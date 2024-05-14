@@ -1,3 +1,6 @@
+# Ignore data folder
+inat_fetcher/data
+
 docs/source
 
 # From https://raw.githubusercontent.com/github/gitignore/main/Python.gitignore

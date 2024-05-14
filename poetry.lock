@@ -1244,6 +1244,17 @@ docs = ["furo (>=2023.9.10)", "sphinx (>=7.2.6)", "sphinx-argparse-cli (>=1.11.1
 testing = ["build[virtualenv] (>=1.0.3)", "covdefaults (>=2.3)", "detect-test-pollution (>=1.2)", "devpi-process (>=1)", "diff-cover (>=8.0.2)", "distlib (>=0.3.8)", "flaky (>=3.7)", "hatch-vcs (>=0.4)", "hatchling (>=1.21)", "psutil (>=5.9.7)", "pytest (>=7.4.4)", "pytest-cov (>=4.1)", "pytest-mock (>=3.12)", "pytest-xdist (>=3.5)", "re-assert (>=1.1)", "time-machine (>=2.13)", "wheel (>=0.42)"]
 
 [[package]]
+name = "types-python-dateutil"
+version = "2.9.0.20240316"
+description = "Typing stubs for python-dateutil"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "types-python-dateutil-2.9.0.20240316.tar.gz", hash = "sha256:5d2f2e240b86905e40944dd787db6da9263f0deabef1076ddaed797351ec0202"},
+    {file = "types_python_dateutil-2.9.0.20240316-py3-none-any.whl", hash = "sha256:6b8cb66d960771ce5ff974e9dd45e38facb81718cc1e208b10b1baccbfdbee3b"},
+]
+
+[[package]]
 name = "types-pytz"
 version = "2024.1.0.20240203"
 description = "Typing stubs for pytz"
@@ -1359,4 +1370,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "c972d65dc1fb6ca9f0161edf67196356ac1c7979ba88b66a0b7a4c8ed993ffa2"
+content-hash = "5f8473c7d7b3b3a080ee3c3d69ba446fb837de4dd41858028bbcad20a9937a1d"

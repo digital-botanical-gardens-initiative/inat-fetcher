@@ -14,7 +14,7 @@ directus_instance = os.getenv("DIRECTUS_INSTANCE")
 directus_login = f"{directus_instance}/auth/login"
 
 # Define the collection name and API url
-collection_name = "Inaturalist_Data_Test"
+collection_name = "Inaturalist_Data"
 directus_api = f"{directus_instance}/items/{collection_name}/"
 directus_email = os.getenv("DIRECTUS_EMAIL")
 directus_password = os.getenv("DIRECTUS_PASSWORD")
@@ -102,6 +102,9 @@ for i in observation:
     url = f"{directus_instance}/fields/{collection_name}"
     # Create a field for each csv column
     data = {"field": col_clean, "type": dir_type}
+    # Add validation for the geometry.Point type
+    if dir_type == "geometry.Point":
+        data["validation"] = {"_intersects_bbox": {}}
     # Make directus request
     response = requests.post(url, json=data, headers=headers, timeout=10)
     # Check if adding is success
