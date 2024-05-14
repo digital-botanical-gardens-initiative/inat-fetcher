@@ -14,7 +14,7 @@ directus_instance = os.getenv("DIRECTUS_INSTANCE")
 directus_login = f"{directus_instance}/auth/login"
 
 # Define the collection name and API url
-collection_name = "Inaturalist_Data"
+collection_name = "Inat_Data"
 directus_api = f"{directus_instance}/items/{collection_name}/"
 directus_email = os.getenv("DIRECTUS_EMAIL")
 directus_password = os.getenv("DIRECTUS_PASSWORD")
@@ -96,23 +96,35 @@ for i in observation:
     if df_col_name == "geojson.coordinates":
         dir_type = "geometry.Point"
 
-    # Print the column name and the dir type
+    # Create patch url
+    url_patch = f"{directus_instance}/fields/{collection_name}/{col_clean}"
 
     # Construct directus url
     url = f"{directus_instance}/fields/{collection_name}"
     # Create a field for each csv column
     data = {"field": col_clean, "type": dir_type}
-    # Add validation for the geometry.Point type
-    if dir_type == "geometry.Point":
-        data["validation"] = {"_intersects_bbox": {}}
+
     # Make directus request
     response = requests.post(url, json=data, headers=headers, timeout=10)
     # Check if adding is success
     if response.status_code == 200:
-        print("yes")
+        print(f"{col_clean} field created")
+        # If field is of type geometry.Point, add a validation to correctly display map
+        if dir_type == "geometry.Point":
+            validation = {"meta": {"validation": {"_and": [{col_clean: {"_intersects_bbox": None}}]}}}
+            response = requests.patch(url_patch, json=validation, headers=headers, timeout=10)
+            if response.status_code == 200:
+                print(f"validation correctly added for field {col_clean}")
+            else:
+                print("error adding validation")
     # else print the type and the column name
     elif response.status_code == 400:
-        print("field already created")
+        response = requests.patch(url_patch, json=data, headers=headers, timeout=10)
+        if response.status_code == 200:
+            print(f"field {col_clean} updated")
+            print(dir_type)
+        else:
+            print(f"error creating/updating field {col_clean}")
     else:
         print(response.status_code)
         print(dir_type)
