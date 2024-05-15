@@ -1,12 +1,9 @@
 import os
 from pathlib import Path
 
-# import db_updater
+import pandas as pd
 from pyinaturalist import get_observations
 from pyinaturalist_convert import to_dataframe
-
-# import format_module
-
 
 # To obtain actual path to inat_fetcher dir
 p = Path(__file__).parents[1]
@@ -20,19 +17,50 @@ path_to_output_file = os.path.join(str(p) + data_in_path, output_filename + "." 
 # import env variable
 access_token = os.getenv("INATURALIST_ACCESS_TOKEN")
 
-response = get_observations(project_id=130644, page="all", per_page=200, access_token=access_token)
-df = to_dataframe(response)
+# Fetch values from iNaturalist for the different users
+response_project = get_observations(project_id=130644, page="all", per_page=200, access_token=access_token)
+df_project = to_dataframe(response_project)
 
-# Before exporting we move the id column to the beginning since it is needed to be at this position to be detected as a PK in airtbale or siomnilar dbs
+response_dbgi = get_observations(user_id="dbgi", page="all", per_page=200, access_token=access_token)
+df_dbgi = to_dataframe(response_dbgi)
+
+response_edouardbruelhart = get_observations(
+    user_id="edouardbruelhart", page="all", per_page=200, access_token=access_token
+)
+df_edouardbruelhart = to_dataframe(response_edouardbruelhart)
+
+response_edouardbrulhart = get_observations(
+    user_id="edouard-brulhart", page="all", per_page=200, access_token=access_token
+)
+df_edouardbrulhart = to_dataframe(response_edouardbrulhart)
+
+response_manu_dfz = get_observations(user_id="manu_dfz", page="all", per_page=200, access_token=access_token)
+df_manu_dfz = to_dataframe(response_manu_dfz)
+
+response_lenditaschwegler = get_observations(
+    user_id="lenditaschwegler", page="all", per_page=200, access_token=access_token
+)
+df_lenditaschwegler = to_dataframe(response_lenditaschwegler)
+
+response_guetchuengst = get_observations(user_id="guetchuengst", page="all", per_page=200, access_token=access_token)
+df_guetchuengst = to_dataframe(response_guetchuengst)
+
+# Merge iNaturalist data
+df = pd.concat(
+    [df_project, df_dbgi, df_edouardbruelhart, df_edouardbrulhart, df_manu_dfz, df_lenditaschwegler, df_guetchuengst],
+    ignore_index=True,
+)
 
 # shift column 'id' to first position
 first_column = df.pop("id")
 
 # insert column using insert(position,column_name,
-# first_column) function
 df.insert(0, "id", first_column)
 
-# We keep the table
+# Drop duplicates
+df = df.drop_duplicates(subset=["id"])
+
+# Write the table as CSV
 df.to_csv(path_to_output_file, index=False)
 
 print("csv correctly written")

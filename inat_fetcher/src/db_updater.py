@@ -70,7 +70,7 @@ if response.status_code == 200:
 
         # Update the observation dictionary with values from the current row
         for col_name, value in obs.items():
-            if col_name == "geojson.coordinates":
+            if col_name == "geojson.coordinates" and value:
                 observation[col_name.replace(".", "_")] = "{" + geo_prefix + value + "}"
             else:
                 observation[col_name.replace(".", "_")] = value
