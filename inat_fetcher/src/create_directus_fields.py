@@ -14,7 +14,7 @@ directus_instance = os.getenv("DIRECTUS_INSTANCE")
 directus_login = f"{directus_instance}/auth/login"
 
 # Define the collection name and API url
-collection_name = "Inat_Data"
+collection_name = "Curation_Data"
 directus_api = f"{directus_instance}/items/{collection_name}/"
 directus_email = os.getenv("DIRECTUS_EMAIL")
 directus_password = os.getenv("DIRECTUS_PASSWORD")
@@ -106,6 +106,7 @@ for i in observation:
 
     # Make directus request
     response = requests.post(url, json=data, headers=headers, timeout=10)
+    print(f"url: {url}, data: {data}, headers: {headers}")
     # Check if adding is success
     if response.status_code == 200:
         print(f"{col_clean} field created")
@@ -127,5 +128,6 @@ for i in observation:
             print(f"error creating/updating field {col_clean}")
     else:
         print(response.status_code)
+        print(response.text)
         print(dir_type)
         print(col_clean)

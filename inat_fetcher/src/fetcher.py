@@ -2,8 +2,11 @@ import os
 from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
 from pyinaturalist import get_observations
 from pyinaturalist_convert import to_dataframe
+
+load_dotenv()
 
 # To obtain actual path to inat_fetcher dir
 p = Path(__file__).parents[1]

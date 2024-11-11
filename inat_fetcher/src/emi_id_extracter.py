@@ -3,6 +3,9 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # To obtain actual path to inat_fetcher dir
 p = Path(__file__).parents[1]
@@ -19,8 +22,9 @@ path_to_output_file = os.path.join(str(p) + data_out_path, output_filename + fil
 path_to_recovery_file = os.path.join(str(p) + data_out_path, recovery_filename + filename_suffix)
 
 # Request to directus to obtain projects codes
-collection_url = "http://directus.dbgi.org/items/EMI_codes"
-column = "emi_code"
+url = os.getenv("DIRECTUS_INSTANCE")
+collection_url = f"{url}/items/Projects"
+column = "project_id"
 params = {"sort[]": f"{column}"}
 session = requests.Session()
 response = session.get(collection_url, params=params)
