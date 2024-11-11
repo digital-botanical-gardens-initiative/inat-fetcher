@@ -106,7 +106,6 @@ for i in observation:
 
     # Make directus request
     response = requests.post(url, json=data, headers=headers, timeout=10)
-    print(f"url: {url}, data: {data}, headers: {headers}")
     # Check if adding is success
     if response.status_code == 200:
         print(f"{col_clean} field created")
