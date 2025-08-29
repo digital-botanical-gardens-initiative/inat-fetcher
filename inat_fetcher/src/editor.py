@@ -45,25 +45,6 @@ p = Path(__file__).parents[1]
 
 USERNAME = "dbgi"
 
-response = get_observations(user_id=USERNAME, page="all")
-my_observations = Observation.from_json_list(response)
-
-
-print(my_observations[0])
-
-pprint(my_observations[:])
-
-response = get_observations_by_id(309816396)
-my_observations = Observation.from_json_list(response)
-print(my_observations[0])
-pprint(my_observations[:])
-
-# emi_external_id:dbgi_009910',
-#         'emi_collector:Federico Brigante',
-#         'emi_collector_orcid:0000-0002-7553-8302',
-#         'emi_collector_inat:@ifedenat25',
-#         'emi_determiner:DBGI',
-
 
 update_observation(
     309816396,
@@ -115,19 +96,6 @@ print(my_observations[0])
 
 
 
-# Subset all observation which have at least one comment
-my_observations_commented = [obs for obs in my_observations if len(obs.comments) > 0]   
-
-pprint(my_observations_commented[:])
-
-
-# We fetch specifically obs 305767127
-
-response = get_observations_by_id(305767127, access_token=access_token)
-obs = Observation.from_json_list(response)[0]
-print(obs)
-pprint(obs)
-
 # We fetch the list of observation in Jardin botanique de Champex with place_id=220507 and for which     num_identification_disagreements is > 0
 # Parameter "identifications" must have one of the following values: ['most_agree', 'most_disagree', 'some_agree']
 
@@ -169,20 +137,6 @@ print(my_observations_some_agree[0])
 # .ObservationNotFound –
 
 # requests.HTTPError –
-
-# Now, with dry run first, we will delete all observation by user dbgi in Jardin botanique de Champex with place_id=220507 which are NOT in my_observations_some_agree
-
-for obs in my_observations:
-    if obs in my_observations_some_agree:
-        print(f"Keeping observation {obs.id} which is in my_observations_some_agree")
-        # print(f"Deleting observation {obs.id} which has {len(obs.identifications)} identifications")
-        # # pyinaturalist.v1.observations.delete_observation(observation_id, access_token=None, **params)
-        # # delete_observation(obs.id, access_token=access_token, dry_run=True)
-        # # delete_observation(obs.id, access_token=access_token, dry_run=True)
-        # print(f"Observation {obs.id} deleted")
-    else:
-        print(f"Keeping observation {obs.id} which has {len(obs.identifications)} identifications") 
-
 
 # trouble shooting.
 # list observation overlapping between my_observations and my_observations_some_agree
