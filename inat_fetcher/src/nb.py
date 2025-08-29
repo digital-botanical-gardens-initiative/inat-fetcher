@@ -62,3 +62,29 @@ print(len(resp['results']))
 print(resp['results'][0]['tags']) # verify tag present
 
 pprint(resp)
+
+sqmple_id = 'dbgi_008572'
+user = 'dbgi'
+dedupe_remote = True
+token = access_token
+verbose = True
+state_file = None
+
+unique_tag = f"emi_external_id:{sqmple_id}"
+if dedupe_remote and token:
+    try:
+        print(f"Checking for existing observation with tag {unique_tag}...")
+        resp = get_observations(q=unique_tag, search_on="tags", user_id=user, page="all")
+        results = resp.get("results") if isinstance(resp, dict) else resp
+        pprint(results)
+        if results and len(results) > 0:
+            # Record first match to state and skip
+            first = results[0]
+            if state_file:
+                state[sqmple_id] = {"id": first.get("id") if isinstance(first, dict) else None}
+            if verbose:
+                print(f"[yellow]Skip[/yellow] {sqmple_id}: found existing on iNat")
+            continue
+    except Exception:  # noqa: BLE001
+        # Non-fatal; proceed without remote dedupe
+        pass

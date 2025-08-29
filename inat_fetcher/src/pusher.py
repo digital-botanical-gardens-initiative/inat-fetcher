@@ -30,6 +30,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple, Dict, Any
+import logging
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -48,6 +49,38 @@ import json
 DEFAULT_CSV = "data/inat_pictures/jbc_formatted_csv/subset.csv"
 DEFAULT_IMAGES_ROOT = "data/inat_pictures"
 ENV_TOKEN_KEY = "INATURALIST_ACCESS_TOKEN_TODAY"
+
+
+def setup_logger(log_file: Optional[Path], verbose: bool) -> logging.Logger:
+    logger = logging.getLogger("inat_pusher")
+    logger.setLevel(logging.DEBUG)
+    # Clear existing handlers to avoid duplicate logs on repeated runs
+    if logger.handlers:
+        logger.handlers.clear()
+
+    fmt = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    # Console handler
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG if verbose else logging.INFO)
+    ch.setFormatter(fmt)
+    logger.addHandler(ch)
+
+    # File handler
+    if log_file:
+        try:
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            fh = logging.FileHandler(log_file)
+            fh.setLevel(logging.INFO)
+            fh.setFormatter(fmt)
+            logger.addHandler(fh)
+        except Exception:  # noqa: BLE001
+            # Fallback to console only if file can't be opened
+            pass
+
+    return logger
 
 
 @dataclass
@@ -147,7 +180,7 @@ def build_params(
     # Join tags into a comma-separated string to match API expectation
     tags = [
         "emi_source:JBC",
-        f"emi_sample_id:{rowd.sample_id}",
+        f"emi_external_id:{rowd.sample_id}",
     ]
     params: dict = {
         "access_token": access_token,
@@ -182,11 +215,14 @@ def run(
     state_file: Optional[Path] = None,
     user: Optional[str] = None,
     dedupe_remote: bool = True,
+    log_file: Optional[Path] = None,
 ) -> None:
     load_env()
+    logger = setup_logger(log_file, verbose)
     token = os.getenv(ENV_TOKEN_KEY)
     if not token:
         print(f"[yellow]Warning:[/yellow] {ENV_TOKEN_KEY} not set; only dry-run will work.")
+        logger.warning("%s not set; only dry-run will work", ENV_TOKEN_KEY)
         if not dry_run:
             raise SystemExit("Access token required for non-dry-run.")
 
@@ -207,18 +243,22 @@ def run(
         filtered = filtered[:limit]
 
     print(f"Found {len(filtered)} row(s) to process from {csv_path}.")
+    logger.info("Found %d rows to process from %s", len(filtered), csv_path)
 
     for idx, rowd in enumerate(filtered, start=1):
         # Idempotency: skip if recorded in local state
         if state_file and rowd.sample_id in state:
+            msg = f"Skip {rowd.sample_id}: already uploaded (state file)"
+            logger.info(msg)
             if verbose:
                 print(f"[yellow]Skip[/yellow] {rowd.sample_id}: already uploaded (state file)")
             continue
 
         # Idempotency: optional remote dedupe via tag search
-        unique_tag = f"emi_sample_id:{rowd.sample_id}"
-        if dedupe_remote and token:
+        unique_tag = f"emi_external_id:{rowd.sample_id}"
+        if dedupe_remote:
             try:
+                logger.debug("Checking remote for %s", unique_tag)
                 resp = get_observations(q=unique_tag, search_on="tags", user_id=user, page="all")
                 results = resp.get("results") if isinstance(resp, dict) else resp
                 if results and len(results) > 0:
@@ -226,21 +266,29 @@ def run(
                     first = results[0]
                     if state_file:
                         state[rowd.sample_id] = {"id": first.get("id") if isinstance(first, dict) else None}
+                    logger.info(
+                        "Skip %s: found existing on iNat (matches=%s, first_id=%s)",
+                        rowd.sample_id,
+                        len(results),
+                        first.get("id") if isinstance(first, dict) else None,
+                    )
                     if verbose:
                         print(f"[yellow]Skip[/yellow] {rowd.sample_id}: found existing on iNat")
                     continue
             except Exception:  # noqa: BLE001
                 # Non-fatal; proceed without remote dedupe
+                logger.warning("Remote dedupe check failed for %s", rowd.sample_id)
                 pass
 
         photos = collect_photos(images_root, rowd.sample_id)
         if not photos:
-            print(f"[yellow]Skip[/yellow] {rowd.sample_id}: No photos under {images_root / rowd.sample_id}")
+            logger.warning(f"[yellow]Skip[/yellow] {rowd.sample_id}: No photos under {images_root / rowd.sample_id}")
             continue
 
         params = build_params(rowd, photos, access_token=token or "")
         if verbose:
             print({k: (v if k != "photos" else [Path(p).name for p in v]) for k, v in params.items()})
+        logger.debug("Params for %s ready (photos=%d)", rowd.sample_id, len(photos))
 
         if dry_run:
             print(
@@ -258,9 +306,18 @@ def run(
                 headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
                 url = f"https://www.inaturalist.org/observations/{resp['id']}/quality/wild.json"
                 r = requests.post(url, data={"agree": agree_str}, headers=headers, timeout=30)
-                if r.status_code >= 300 and verbose:
-                    print(f"[yellow]Warn[/yellow] DQA vote failed: status={r.status_code} body={r.text[:200]}")
+                if r.status_code >= 300:
+                    logger.warning(
+                        "DQA vote failed for %s (id=%s): status=%s body=%s",
+                        rowd.sample_id,
+                        resp.get("id"),
+                        r.status_code,
+                        r.text[:200],
+                    )
+                else:
+                    logger.info("DQA vote set for %s (id=%s, wild=%s)", rowd.sample_id, resp.get("id"), agree_str)
             print(f"[green]Created[/green] {rowd.sample_id}: response={resp}")
+            logger.info("Created %s: id=%s uuid=%s", rowd.sample_id, resp.get("id"), resp.get("uuid"))
             # Update local state
             if state_file and isinstance(resp, dict) and resp.get("id") is not None:
                 state[rowd.sample_id] = {"id": resp["id"], "uuid": resp.get("uuid")}
@@ -268,6 +325,7 @@ def run(
                     state_file.parent.mkdir(parents=True, exist_ok=True)
                     state_file.write_text(json.dumps(state, indent=2))
                 except Exception as write_exc:  # noqa: BLE001
+                    logger.warning("Failed to write state file: %s", write_exc)
                     if verbose:
                         print(f"[yellow]Warn[/yellow] failed to write state: {write_exc}")
             if verify and isinstance(resp, dict) and resp.get("id") and token:
@@ -277,10 +335,17 @@ def run(
                     print(
                         f"[blue]Verify[/blue] id={resp['id']} captive={getattr(final, 'captive', None) if not isinstance(final, dict) else final.get('captive')}"
                     )
+                    logger.info(
+                        "Verify id=%s captive=%s",
+                        resp.get("id"),
+                        (getattr(final, "captive", None) if not isinstance(final, dict) else final.get("captive")),
+                    )
                 except Exception as inner_exc:  # noqa: BLE001
                     print(f"[yellow]Warn[/yellow] verify failed for {rowd.sample_id}: {inner_exc}")
+                    logger.warning("Verify failed for %s: %s", rowd.sample_id, inner_exc)
         except Exception as exc:  # noqa: BLE001
             print(f"[red]Error[/red] {rowd.sample_id}: {exc}")
+            logger.exception("Error processing %s", rowd.sample_id)
 
 
 def main(argv: Optional[List[str]] = None) -> None:
@@ -296,6 +361,12 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--verify", action="store_true", help="Re-fetch observation to verify captive flag")
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        default=Path("data/inat_pictures/pusher.log"),
+        help="Path to write a run log with created/skipped/errors",
+    )
     parser.add_argument(
         "--state-file",
         type=Path,
@@ -321,6 +392,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         state_file=args.state_file,
         user=args.user,
         dedupe_remote=args.dedupe_remote,
+        log_file=args.log_file,
     )
 
 
