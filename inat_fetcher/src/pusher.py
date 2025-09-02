@@ -521,61 +521,59 @@ def run(
                         except Exception:
                             pass
                 else:
-                    # Upload photos one-by-one with per-file retries and state tracking
+                    # Batch upload all remaining photos at once with limited retries
                     uploaded_hashes = set()
                     if state.get(rowd.sample_id) and state[rowd.sample_id].get("uploaded_photos"):
                         uploaded_hashes = set(state[rowd.sample_id]["uploaded_photos"])  # type: ignore[index]
 
+                    # Filter to photos not yet recorded as uploaded in state
+                    to_upload: list[str] = []
+                    hashes_to_add: list[str] = []
                     for photo_path in photos_list:
                         p = Path(photo_path)
                         try:
                             h = _sha256_file(p)
                         except Exception:
                             h = f"name:{p.name}|size:{p.stat().st_size}"
-
-                        # Skip if this exact file was already recorded as uploaded
                         if h in uploaded_hashes:
                             continue
+                        to_upload.append(str(p))
+                        hashes_to_add.append(h)
 
-                        # If server already has at least local_total photos, stop to avoid duplicates
-                        if server_count >= local_total:
-                            break
-
-                        per_attempt = 0
+                    if not to_upload:
+                        # Nothing new to upload; if server already has enough, mark complete
+                        if state_file:
+                            final_count = _get_photo_count(obs_id, token)
+                            if final_count >= local_total:
+                                state.setdefault(rowd.sample_id, {})
+                                entry = state[rowd.sample_id]
+                                entry["uploaded_photos"] = sorted(set(entry.get("uploaded_photos", [])) | set(hashes_to_add))
+                                entry["complete"] = True
+                                try:
+                                    state_file.write_text(json.dumps(state, indent=2))
+                                except Exception:
+                                    pass
+                        # Proceed to DQA step
+                    else:
+                        attempt = 0
                         while True:
-                            before = _get_photo_count(obs_id, token)
+                            before = server_count if server_count >= 0 else _get_photo_count(obs_id, token)
                             try:
                                 upload_media(
                                     obs_id,
-                                    photos=[str(p)],
+                                    photos=to_upload,
                                     access_token=token,
                                     timeout=upload_timeout,
                                 )
                             except Exception as e:  # noqa: BLE001
-                                per_attempt += 1
-                                # Wait for indexing; success may have happened
-                                time.sleep(index_wait_interval)
-                                after = _get_photo_count(obs_id, token)
-                                if after > before:
-                                    server_count = after
-                                    uploaded_hashes.add(h)
-                                    if state_file:
-                                        state.setdefault(rowd.sample_id, {})
-                                        entry = state[rowd.sample_id]
-                                        entry["uploaded_photos"] = sorted(set(entry.get("uploaded_photos", [])) | {h})
-                                        try:
-                                            state_file.write_text(json.dumps(state, indent=2))
-                                        except Exception:
-                                            pass
-                                    break
-                                if per_attempt > upload_retries:
+                                attempt += 1
+                                if attempt > upload_retries:
                                     raise
-                                delay = min(10, 3 * per_attempt)
+                                delay = min(15, 5 * attempt)
                                 logger.warning(
-                                    "Photo %s upload failed for %s (attempt %d/%d): %s; retrying in %ss",
-                                    p.name,
+                                    "Batch upload failed for %s (attempt %d/%d): %s; retrying in %ss",
                                     rowd.sample_id,
-                                    per_attempt,
+                                    attempt,
                                     upload_retries,
                                     e,
                                     delay,
@@ -583,38 +581,29 @@ def run(
                                 time.sleep(delay)
                                 continue
 
-                            # If no exception, still confirm photo count increased before marking success
+                            # Success path: verify count increased to expected (best effort)
                             time.sleep(index_wait_interval)
                             after = _get_photo_count(obs_id, token)
-                            if after > before:
+                            if after >= local_total or after > before:
                                 server_count = after
-                                uploaded_hashes.add(h)
                                 if state_file:
                                     state.setdefault(rowd.sample_id, {})
                                     entry = state[rowd.sample_id]
-                                    entry["uploaded_photos"] = sorted(set(entry.get("uploaded_photos", [])) | {h})
+                                    entry["uploaded_photos"] = sorted(set(entry.get("uploaded_photos", [])) | set(hashes_to_add))
+                                    if after >= local_total:
+                                        entry["complete"] = True
                                     try:
                                         state_file.write_text(json.dumps(state, indent=2))
                                     except Exception:
                                         pass
                                 break
                             else:
-                                # Treat as transient; let retry loop handle
-                                per_attempt += 1
-                                if per_attempt > upload_retries:
+                                attempt += 1
+                                if attempt > upload_retries:
                                     raise RuntimeError(
-                                        f"Upload completed but photo count did not change for {p.name}"
+                                        f"Upload completed but photo count did not change for {rowd.sample_id}"
                                     )
-                                time.sleep(min(10, 3 * per_attempt))
-                    # After attempting all photos, if server has at least local_total, mark complete
-                    if state_file:
-                        final_count = _get_photo_count(obs_id, token)
-                        if final_count >= local_total:
-                            state[rowd.sample_id]["complete"] = True
-                            try:
-                                state_file.write_text(json.dumps(state, indent=2))
-                            except Exception:
-                                pass
+                                time.sleep(min(15, 5 * attempt))
             # Set DQA 'wild' vote once; is_wild==0 -> agree=false (captive)
             if rowd.is_wild is not None and isinstance(resp, dict) and resp.get("id") and token:
                 agree_str = "true" if rowd.is_wild == 1 else "false"
