@@ -19,6 +19,7 @@ Usage (dry run by default):
 
 To actually create observations, pass `--no-dry-run` and ensure
 `INATURALIST_ACCESS_TOKEN_TODAY` is set in your environment or .env file.
+See https://www.inaturalist.org/users/api_token for generating a token.
 """
 
 from __future__ import annotations
@@ -50,8 +51,8 @@ import requests
 import json
 
 
-DEFAULT_CSV = "data/inat_pictures/jbc_formatted_csv/jbc_EPSG:2056.csv"
-DEFAULT_IMAGES_ROOT = "/Users/pma/02_tmp/inat_pictures/"
+DEFAULT_CSV = "/Users/pma/02_tmp/qfieldcloud_data/qfieldcloud/data/formatted_csv/jbb/jbb_EPSG:4326.csv"
+DEFAULT_IMAGES_ROOT = "/Users/pma/02_tmp/qfieldcloud_data/qfieldcloud/data/inat_pictures"
 ENV_TOKEN_KEY = "INATURALIST_ACCESS_TOKEN_TODAY"
 
 
