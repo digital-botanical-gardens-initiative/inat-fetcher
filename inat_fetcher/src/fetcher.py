@@ -12,10 +12,11 @@ load_dotenv()
 p = Path(__file__).parents[1]
 
 # Set up paths and filenames
-data_in_path = "/data/in/"
+data_in_path = p / "data" / "in"
+data_in_path.mkdir(parents=True, exist_ok=True)
 output_filename = "inat_observations_raw"
 filename_suffix = "csv"
-path_to_output_file = os.path.join(str(p) + data_in_path, output_filename + "." + filename_suffix)
+path_to_output_file = data_in_path / f"{output_filename}.{filename_suffix}"
 
 # import env variable
 access_token = os.getenv("INATURALIST_ACCESS_TOKEN")
