@@ -1,20 +1,14 @@
 """
 Create iNaturalist observations from a CSV and local photos.
 
-Scaffold notes:
-- Reads rows from the JBC-formatted CSV (EPSG:4326) and builds
+Notes:
+- Reads rows from the JBP/JBC-formatted CSV and builds
   parameters for `pyinaturalist.v1.observations.create_observation()`.
-- Photos are resolved from subfolders under the images root using the
-  `sample_id` column (e.g., data/inat_pictures/dbgi_008572/*.jpg).
-- Coordinates in the supplied CSV appear swapped (columns labeled
-  'latitude' and 'longitude' look reversed in examples). This scaffold
-  includes a simple safeguard to auto-swap if values look reversed;
-  we will confirm/adjust in the next iteration.
+- Photos are resolved from explicit picture columns first, then from
+  per-sample folders and recursive sample-id matches under the images root.
 
 Usage (dry run by default):
-    python -m inat_fetcher.src.pusher \
-        --csv data/inat_pictures/jbc_formatted_csv/jbc_EPSG:4326.csv \
-        --images-root data/inat_pictures \
+    uv run python -m inat_fetcher.src.pusher \
         --limit 3 --verbose
 
 To actually create observations, pass `--no-dry-run` and ensure
@@ -25,35 +19,37 @@ See https://www.inaturalist.org/users/api_token for generating a token.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
+import logging
 import os
-from dataclasses import dataclass
 import re
+import time
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple, Dict, Any
-import logging
-import time
-import hashlib
+from typing import Any, Optional
 
 import pandas as pd
 from dotenv import load_dotenv
-from rich import print  # noqa: T201
+import requests
 
 # pyinaturalist helpers
 from pyinaturalist import (
     create_observation,
-    get_observations_by_id,
     get_observations,
+    get_observations_by_id,
     upload as upload_media,
 )
 from pyinaturalist.session import get_refresh_params
-import requests
-import json
 
 
-DEFAULT_CSV = "/Users/pma/02_tmp/qfieldcloud_data/qfieldcloud/data/formatted_csv/jbb/jbb_EPSG:4326.csv"
-DEFAULT_IMAGES_ROOT = "/Users/pma/02_tmp/qfieldcloud_data/qfieldcloud/data/inat_pictures"
+DEFAULT_CSV = "/media/data/nextcloud_data/emi/files/output/csv/jbp-new"
+DEFAULT_IMAGES_ROOT = "/media/data/nextcloud_data/emi/files/output/pictures/jbp-new/jbp-new"
 ENV_TOKEN_KEY = "INATURALIST_ACCESS_TOKEN_TODAY"
+PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+PICTURE_COLUMN_PREFIX = "picture_"
 
 
 def setup_logger(log_file: Optional[Path], verbose: bool) -> logging.Logger:
@@ -103,6 +99,7 @@ class RowData:
     collector_fullname: Optional[str]
     collector_orcid: Optional[str]
     project: Optional[str]
+    photo_refs: list[str] = field(default_factory=list)
 
 
 def load_env() -> None:
@@ -136,7 +133,7 @@ def coerce_float(val: object) -> Optional[float]:
         return None
 
 
-def get_lat_lon(row_lat: Optional[float], row_lon: Optional[float]) -> Tuple[Optional[float], Optional[float]]:
+def get_lat_lon(row_lat: Optional[float], row_lon: Optional[float]) -> tuple[Optional[float], Optional[float]]:
     """Return (lat, lon) with a guard for swapped CSV columns.
 
     The provided CSV appears to have 'latitude' and 'longitude' values swapped
@@ -152,20 +149,117 @@ def get_lat_lon(row_lat: Optional[float], row_lon: Optional[float]) -> Tuple[Opt
     return lat, lon
 
 
-def collect_photos(images_root: Path, sample_id: str) -> List[Path]:
+def natural_key(path: Path) -> list[object]:
+    name = path.name.lower()
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name)]
+
+
+def is_photo_path(path: Path) -> bool:
+    return path.suffix.lower() in PHOTO_EXTENSIONS
+
+
+def _clean_photo_ref(value: object) -> Optional[str]:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    ref = str(value).strip()
+    return ref or None
+
+
+def photo_refs_from_row(row: pd.Series) -> list[str]:
+    refs: list[str] = []
+    for col in row.index:
+        if str(col).startswith(PICTURE_COLUMN_PREFIX):
+            ref = _clean_photo_ref(row.get(col))
+            if ref:
+                refs.append(ref)
+    return refs
+
+
+class PhotoResolver:
+    def __init__(self, images_root: Path) -> None:
+        self.images_root = images_root
+        self._basename_index: Optional[dict[str, list[Path]]] = None
+
+    def _iter_photos(self) -> Iterable[Path]:
+        if not self.images_root.exists():
+            return []
+        return (path for path in self.images_root.rglob("*") if path.is_file() and is_photo_path(path))
+
+    def _index_by_basename(self) -> dict[str, list[Path]]:
+        if self._basename_index is None:
+            index: dict[str, list[Path]] = {}
+            for path in self._iter_photos():
+                index.setdefault(path.name.lower(), []).append(path)
+            self._basename_index = {key: sorted(paths, key=natural_key) for key, paths in index.items()}
+        return self._basename_index
+
+    def resolve_ref(self, ref: str) -> list[Path]:
+        ref_path = Path(ref)
+        candidates = []
+        if ref_path.is_absolute():
+            candidates.append(ref_path)
+        else:
+            candidates.append(self.images_root / ref_path)
+            candidates.append(self.images_root / ref_path.name)
+
+        matches = [path for path in candidates if path.is_file() and is_photo_path(path)]
+        if matches:
+            return matches
+
+        return self._index_by_basename().get(ref_path.name.lower(), [])
+
+    def collect(self, sample_id: str, photo_refs: Optional[Iterable[str]] = None) -> list[Path]:
+        paths: list[Path] = []
+        for ref in photo_refs or []:
+            paths.extend(self.resolve_ref(ref))
+
+        paths.extend(collect_photos(self.images_root, sample_id))
+
+        if not paths and self.images_root.exists():
+            sample_key = sample_id.lower()
+            paths.extend(path for path in self._iter_photos() if sample_key in path.name.lower())
+
+        return dedupe_and_sort_photos(paths)
+
+
+def dedupe_and_sort_photos(paths: Iterable[Path]) -> list[Path]:
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for path in paths:
+        resolved = path.resolve() if path.exists() else path
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        unique.append(path)
+    return sorted(unique, key=natural_key)
+
+
+def collect_photos(images_root: Path, sample_id: str) -> list[Path]:
     folder = images_root / sample_id
     if not folder.exists() or not folder.is_dir():
         return []
-    exts = ("*.jpg", "*.jpeg", "*.png")
-    paths: List[Path] = []
-    for pattern in exts:
+    paths: list[Path] = []
+    for pattern in ("*.jpg", "*.jpeg", "*.png"):
         paths.extend(folder.glob(pattern))
+    return dedupe_and_sort_photos(paths)
 
-    def natural_key(p: Path):
-        name = p.name.lower()
-        return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name)]
 
-    return sorted(paths, key=natural_key)
+def resolve_csv_path(csv_path: Path) -> Path:
+    if csv_path.is_file():
+        return csv_path
+    if not csv_path.exists():
+        raise FileNotFoundError(f"CSV path does not exist: {csv_path}")
+    if not csv_path.is_dir():
+        raise ValueError(f"CSV path is neither a file nor a directory: {csv_path}")
+
+    candidates = sorted(path for path in csv_path.glob("*.csv") if path.is_file())
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise FileNotFoundError(f"No .csv files found in directory: {csv_path}")
+
+    candidate_list = "\n".join(f"  - {path}" for path in candidates)
+    raise ValueError(f"Expected exactly one .csv in {csv_path}, found {len(candidates)}:\n{candidate_list}")
 
 
 def to_row_data(row: pd.Series) -> RowData:
@@ -195,12 +289,11 @@ def to_row_data(row: pd.Series) -> RowData:
             str(row.get("collector_orcid")).strip() if pd.notna(row.get("collector_orcid")) else None
         ),
         project=(str(row.get("project")).strip() if pd.notna(row.get("project")) else None),
+        photo_refs=photo_refs_from_row(row),
     )
 
 
-def build_params(
-    rowd: RowData, photos: Iterable[Path], access_token: str
-) -> dict:
+def build_params(rowd: RowData, photos: Iterable[Path], access_token: str) -> dict:
     lat, lon = rowd.latitude, rowd.longitude
     # Join tags into a comma-separated string to match API expectation
     tags = [
@@ -240,8 +333,8 @@ def build_params(
 
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
-    with path.open('rb') as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b''):
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
 
@@ -251,14 +344,16 @@ def _get_photo_count(obs_id: int, token: str) -> int:
         check = get_observations_by_id(obs_id, access_token=token, refresh=True)
         result = check["results"][0] if isinstance(check, dict) and check.get("results") else check
         if isinstance(result, dict):
-            photos = result.get('photos') or []
+            photos = result.get("photos") or []
             return len(photos)
     except Exception:
         pass
     return -1
 
 
-def resolve_lat_lon_from_xy(rowd: RowData, xy_epsg: str, logger: logging.Logger) -> Tuple[Optional[float], Optional[float]]:
+def resolve_lat_lon_from_xy(
+    rowd: RowData, xy_epsg: str, logger: logging.Logger
+) -> tuple[Optional[float], Optional[float]]:
     """Resolve latitude/longitude strictly from x_coord/y_coord.
 
     - If xy_epsg == '4326', interpret x_coord as longitude and y_coord as latitude.
@@ -280,7 +375,7 @@ def resolve_lat_lon_from_xy(rowd: RowData, xy_epsg: str, logger: logging.Logger)
         return lat, lon
     except ModuleNotFoundError:
         logger.error(
-            "pyproj is required to transform x/y from EPSG:%s to EPSG:4326. Install with 'poetry add pyproj' or 'pip install pyproj'",
+            "pyproj is required to transform x/y from EPSG:%s to EPSG:4326. Install with 'uv add pyproj' or 'pip install pyproj'",
             xy_epsg,
         )
         return None, None
@@ -310,15 +405,16 @@ def run(
 ) -> None:
     load_env()
     logger = setup_logger(log_file, verbose)
+    csv_path = resolve_csv_path(csv_path)
     token = os.getenv(ENV_TOKEN_KEY)
     if not token:
-        print(f"[yellow]Warning:[/yellow] {ENV_TOKEN_KEY} not set; only dry-run will work.")
+        print(f"Warning: {ENV_TOKEN_KEY} not set; only dry-run will work.")
         logger.warning("%s not set; only dry-run will work", ENV_TOKEN_KEY)
         if not dry_run:
             raise SystemExit("Access token required for non-dry-run.")
 
     # State for idempotency
-    state: Dict[str, Any] = {}
+    state: dict[str, Any] = {}
     if state_file:
         try:
             if state_file.exists():
@@ -330,24 +426,28 @@ def run(
     rows = (to_row_data(r) for _, r in df.iterrows())
     # Keep only rows marked for upload and with a sample_id
     filtered = [r for r in rows if r.inat_upload and r.sample_id]
-    if limit is not None:
-        filtered = filtered[:limit]
 
-    print(f"Found {len(filtered)} row(s) to process from {csv_path}.")
-    logger.info("Found %d rows to process from %s", len(filtered), csv_path)
+    print(f"Found {len(filtered)} uploadable row(s) in {csv_path}.")
+    logger.info("Found %d uploadable rows in %s", len(filtered), csv_path)
 
+    photo_resolver = PhotoResolver(images_root)
+    processed = 0
     for idx, rowd in enumerate(filtered, start=1):
+        if limit is not None and processed >= limit:
+            break
+
         # Idempotency: skip only if marked complete in local state
         if state_file and rowd.sample_id in state and state[rowd.sample_id].get("complete") is True:
             msg = f"Skip {rowd.sample_id}: already uploaded (complete in state file)"
             logger.info(msg)
             if verbose:
-                print(f"[yellow]Skip[/yellow] {rowd.sample_id}: already uploaded (complete)")
+                print(f"Skip {rowd.sample_id}: already uploaded (complete)")
             continue
 
         # Idempotency: optional remote dedupe via tag search
         unique_tag = f"emi_external_id:{rowd.sample_id}"
-        if dedupe_remote:
+        should_dedupe_remote = dedupe_remote and not dry_run
+        if should_dedupe_remote:
             try:
                 logger.debug("Checking remote for %s", unique_tag)
                 resp = get_observations(
@@ -362,7 +462,18 @@ def run(
                     # Record first match to state and skip
                     first = results[0]
                     if state_file:
-                        state[rowd.sample_id] = {"id": first.get("id") if isinstance(first, dict) else None}
+                        state.setdefault(rowd.sample_id, {})
+                        state[rowd.sample_id].update(
+                            {
+                                "id": first.get("id") if isinstance(first, dict) else None,
+                                "complete": True,
+                            }
+                        )
+                        try:
+                            state_file.parent.mkdir(parents=True, exist_ok=True)
+                            state_file.write_text(json.dumps(state, indent=2))
+                        except Exception:
+                            pass
                     logger.info(
                         "Skip %s: found existing on iNat (matches=%s, first_id=%s)",
                         rowd.sample_id,
@@ -370,16 +481,18 @@ def run(
                         first.get("id") if isinstance(first, dict) else None,
                     )
                     if verbose:
-                        print(f"[yellow]Skip[/yellow] {rowd.sample_id}: found existing on iNat")
+                        print(f"Skip {rowd.sample_id}: found existing on iNat")
                     continue
             except Exception:  # noqa: BLE001
                 # Non-fatal; proceed without remote dedupe
                 logger.warning("Remote dedupe check failed for %s", rowd.sample_id)
                 pass
 
-        photos = collect_photos(images_root, rowd.sample_id)
+        photos = photo_resolver.collect(rowd.sample_id, rowd.photo_refs)
         if not photos:
-            logger.warning(f"[yellow]Skip[/yellow] {rowd.sample_id}: No photos under {images_root / rowd.sample_id}")
+            logger.warning("Skip %s: no photos found under %s", rowd.sample_id, images_root)
+            if verbose:
+                print(f"Skip {rowd.sample_id}: no photos found under {images_root}")
             continue
 
         # Determine EPSG for x/y: auto-detect from CSV filename if requested
@@ -397,7 +510,7 @@ def run(
         lat, lon = resolve_lat_lon_from_xy(rowd, epsg_to_use, logger)
         if lat is None or lon is None:
             logger.warning("Skipping %s: could not resolve latitude/longitude", rowd.sample_id)
-            print(f"[yellow]Skip[/yellow] {rowd.sample_id}: could not resolve latitude/longitude")
+            print(f"Skip {rowd.sample_id}: could not resolve latitude/longitude")
             continue
 
         # Override legacy lat/lon so build_params uses the resolved values
@@ -419,12 +532,13 @@ def run(
                 }
             )
         logger.debug("Params for %s ready (photos=%d)", rowd.sample_id, len(photos))
+        processed += 1
 
         if dry_run:
             print(
-                f"[cyan]Dry-run[/cyan] {idx}/{len(filtered)}: sample_id={rowd.sample_id}, "
+                f"Dry-run {processed}{f'/{limit}' if limit else ''}: csv_row={idx}, sample_id={rowd.sample_id}, "
                 f"taxon={rowd.taxon_name}, lat/lon={params.get('latitude')},{params.get('longitude')} "
-                f"photos={len(photos)}"
+                f"photos={len(photos)} photo_files={[Path(p).name for p in params.get('photos', [])]}"
             )
             continue
 
@@ -433,13 +547,13 @@ def run(
             photos_list = params.pop("photos", [])
 
             # Helper: poll iNat for an existing obs with our unique tag
-            def wait_for_existing(timeout_s: int) -> Optional[Dict[str, Any]]:
+            def wait_for_existing(timeout_s: int) -> Optional[dict[str, Any]]:
                 deadline = time.time() + timeout_s
                 tries = 0
                 while time.time() < deadline:
                     tries += 1
                     try:
-                        refresh_kwargs = get_refresh_params('observations')
+                        refresh_kwargs = get_refresh_params("observations")
                         check = get_observations(
                             q=unique_tag,
                             search_on="tags",
@@ -457,7 +571,7 @@ def run(
 
             # Retry create on transient errors, but wait + re-check before retrying to avoid duplicates
             attempt = 0
-            resp: Dict[str, Any]
+            resp: dict[str, Any]
             while True:
                 # Re-check for an existing observation before each create attempt
                 existing = wait_for_existing(0)
@@ -621,24 +735,31 @@ def run(
                     )
                 else:
                     logger.info("DQA vote set for %s (id=%s, wild=%s)", rowd.sample_id, resp.get("id"), agree_str)
-            print(f"[green]Created[/green] {rowd.sample_id}: response={resp}")
+            print(f"Created {rowd.sample_id}: response={resp}")
             logger.info("Created %s: id=%s uuid=%s", rowd.sample_id, resp.get("id"), resp.get("uuid"))
             # Update local state
             if state_file and isinstance(resp, dict) and resp.get("id") is not None:
-                state[rowd.sample_id] = {"id": resp["id"], "uuid": resp.get("uuid")}
+                state.setdefault(rowd.sample_id, {})
+                state[rowd.sample_id].update(
+                    {
+                        "id": resp["id"],
+                        "uuid": resp.get("uuid"),
+                        "complete": True,
+                    }
+                )
                 try:
                     state_file.parent.mkdir(parents=True, exist_ok=True)
                     state_file.write_text(json.dumps(state, indent=2))
                 except Exception as write_exc:  # noqa: BLE001
                     logger.warning("Failed to write state file: %s", write_exc)
                     if verbose:
-                        print(f"[yellow]Warn[/yellow] failed to write state: {write_exc}")
+                        print(f"Warn: failed to write state: {write_exc}")
             if verify and isinstance(resp, dict) and resp.get("id") and token:
                 try:
                     check = get_observations_by_id(resp["id"], access_token=token, refresh=True)
                     final = check["results"][0] if isinstance(check, dict) and check.get("results") else check
                     print(
-                        f"[blue]Verify[/blue] id={resp['id']} captive={getattr(final, 'captive', None) if not isinstance(final, dict) else final.get('captive')}"
+                        f"Verify id={resp['id']} captive={getattr(final, 'captive', None) if not isinstance(final, dict) else final.get('captive')}"
                     )
                     logger.info(
                         "Verify id=%s captive=%s",
@@ -646,21 +767,21 @@ def run(
                         (getattr(final, "captive", None) if not isinstance(final, dict) else final.get("captive")),
                     )
                 except Exception as inner_exc:  # noqa: BLE001
-                    print(f"[yellow]Warn[/yellow] verify failed for {rowd.sample_id}: {inner_exc}")
+                    print(f"Warn: verify failed for {rowd.sample_id}: {inner_exc}")
                     logger.warning("Verify failed for %s: %s", rowd.sample_id, inner_exc)
         except Exception as exc:  # noqa: BLE001
-            print(f"[red]Error[/red] {rowd.sample_id}: {exc}")
+            print(f"Error {rowd.sample_id}: {exc}")
             logger.exception("Error processing %s", rowd.sample_id)
 
 
-def main(argv: Optional[List[str]] = None) -> None:
+def main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", default=DEFAULT_CSV, type=Path, help="Path to input CSV")
     parser.add_argument(
         "--images-root",
         default=DEFAULT_IMAGES_ROOT,
         type=Path,
-        help="Root directory containing per-sample photo subfolders",
+        help="Root directory containing photos",
     )
     parser.add_argument("--limit", type=int, default=None, help="Max rows to process")
     parser.add_argument("--dry-run", action=argparse.BooleanOptionalAction, default=True)
@@ -683,7 +804,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         "--dedupe-remote",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Query iNat by tag to skip already-uploaded samples",
+        help="Query iNat by tag to skip already-uploaded samples. Ignored during dry-runs.",
     )
     parser.add_argument(
         "--refresh-remote",

@@ -1,43 +1,52 @@
 # inat-fetcher
 
-[![Release](https://img.shields.io/github/v/release/digital-botanical-gardens-initiative/inat-fetcher)](https://img.shields.io/github/v/release/digital-botanical-gardens-initiative/inat-fetcher)
-[![Build status](https://img.shields.io/github/actions/workflow/status/digital-botanical-gardens-initiative/inat-fetcher/main.yml?branch=main)](https://github.com/digital-botanical-gardens-initiative/inat-fetcher/actions/workflows/main.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/gh/digital-botanical-gardens-initiative/inat-fetcher/branch/main/graph/badge.svg)](https://codecov.io/gh/digital-botanical-gardens-initiative/inat-fetcher)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/digital-botanical-gardens-initiative/inat-fetcher)](https://img.shields.io/github/commit-activity/m/digital-botanical-gardens-initiative/inat-fetcher)
-[![License](https://img.shields.io/github/license/digital-botanical-gardens-initiative/inat-fetcher)](https://img.shields.io/github/license/digital-botanical-gardens-initiative/inat-fetcher)
+Utilities for preparing, fetching, and pushing DBGI observation data to iNaturalist.
 
-test
+## Setup
 
-- **Github repository**: <https://github.com/digital-botanical-gardens-initiative/inat-fetcher/>
-- **Documentation** <https://digital-botanical-gardens-initiative.github.io/inat-fetcher/>
-
-## Getting started with your project
-
-First, create a repository on GitHub with the same name as this project, and then run the following commands:
+Install dependencies with uv:
 
 ```bash
-git init -b main
-git add .
-git commit -m "init commit"
-git remote add origin git@github.com:digital-botanical-gardens-initiative/inat-fetcher.git
-git push -u origin main
+uv sync --dev
 ```
 
-Finally, install the environment and the pre-commit hooks with
+Run tests:
 
 ```bash
-make install
+uv run pytest -q
 ```
 
-You are now ready to start development on your project!
-The CI/CD pipeline will be triggered when you open a pull request, merge to main, or when you create a new release.
+## Pushing observations
 
-To finalize the set-up for publishing to PyPi or Artifactory, see [here](https://fpgmaas.github.io/cookiecutter-poetry/features/publishing/#set-up-for-pypi).
-For activating the automatic documentation with MkDocs, see [here](https://fpgmaas.github.io/cookiecutter-poetry/features/mkdocs/#enabling-the-documentation-on-github).
-To enable the code coverage reports, see [here](https://fpgmaas.github.io/cookiecutter-poetry/features/codecov/).
+Dry-run the first three uploadable observations from the configured JBP inputs:
 
-## Releasing a new version
+```bash
+uv run python -m inat_fetcher.src.pusher --limit 3 --dry-run --verbose
+```
 
----
+### iNaturalist token
 
-Repository initiated with [fpgmaas/cookiecutter-poetry](https://github.com/fpgmaas/cookiecutter-poetry).
+For a live upload, the pusher needs an iNaturalist API token for the account that will own the observations.
+
+1. Log in to iNaturalist in a browser.
+2. Open <https://www.inaturalist.org/users/api_token>.
+3. Copy the token shown on that page.
+4. Provide it as `INATURALIST_ACCESS_TOKEN_TODAY`.
+
+You can put it in `inat_fetcher/src/.env`:
+
+```bash
+INATURALIST_ACCESS_TOKEN_TODAY=your_token_here
+```
+
+Or export it for the current shell:
+
+```bash
+export INATURALIST_ACCESS_TOKEN_TODAY=your_token_here
+```
+
+Then pass `--no-dry-run`:
+
+```bash
+INATURALIST_ACCESS_TOKEN_TODAY=<token> uv run python -m inat_fetcher.src.pusher --limit 3 --no-dry-run --verify
+```

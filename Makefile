@@ -1,28 +1,27 @@
 .PHONY: install
-install: ## Install the poetry environment and install the pre-commit hooks
-	@echo "🚀 Creating virtual environment using pyenv and poetry"
-	@poetry install
-	@ poetry run pre-commit install
-	@poetry shell
+install: ## Install dependencies and pre-commit hooks with uv
+	@echo "Creating virtual environment and installing dependencies with uv"
+	@uv sync --dev
+	@uv run pre-commit install
 
 .PHONY: check
 check: ## Run code quality tools.
-	@echo "🚀 Checking Poetry lock file consistency with 'pyproject.toml': Running poetry lock --check"
-	@poetry check --lock
-	@echo "🚀 Linting code: Running pre-commit"
-	@poetry run pre-commit run -a
-	@echo "🚀 Static type checking: Running mypy"
-	@poetry run mypy
+	@echo "Checking uv lock file consistency"
+	@uv lock --check
+	@echo "Running pre-commit"
+	@uv run pre-commit run -a
+	@echo "Running mypy"
+	@uv run mypy
 
 .PHONY: test
 test: ## Test the code with pytest
-	@echo "🚀 Testing code: Running pytest"
-	@poetry run pytest --doctest-modules
+	@echo "Running pytest"
+	@uv run pytest --doctest-modules
 
 .PHONY: build
-build: clean-build ## Build wheel file using poetry
-	@echo "🚀 Creating wheel file"
-	@poetry build
+build: clean-build ## Build wheel and source distributions
+	@echo "Building package"
+	@uv build
 
 .PHONY: clean-build
 clean-build: ## clean build artifacts

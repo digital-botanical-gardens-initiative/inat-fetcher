@@ -1,40 +1,40 @@
-[tool.poetry]
-name = "inat_fetcher"
+[project]
+name = "inat-fetcher"
 version = "0.0.1"
-description = "test"
-authors = ["Edouard Brülhart <edouard.bruelhart@unifr.ch>"]
-repository = "https://github.com/digital-botanical-gardens-initiative/inat-fetcher"
-documentation = "https://digital-botanical-gardens-initiative.github.io/inat-fetcher/"
+description = "iNaturalist fetch and push utilities"
+authors = [{ name = "Edouard Brulhart", email = "edouard.bruelhart@unifr.ch" }]
 readme = "README.md"
-packages = [
-  {include = "inat_fetcher"}
+requires-python = ">=3.11,<4.0"
+dependencies = [
+    "pandas>=2.2.1",
+    "pandas-stubs>=2.2.1.240316",
+    "pyinaturalist>=0.19.0,<0.20.0",
+    "pyinaturalist-convert==0.5.0",
+    "pyproj>=3.7.2",
+    "python-dotenv>=1.0.1",
+    "requests>=2.31.0",
+    "requests-ratelimiter<0.8",
+    "tablib>=3.5.0",
+    "types-python-dateutil>=2.9.0.20240316",
+    "types-requests>=2.31.0.20240406",
 ]
 
-[tool.poetry.dependencies]
-python = ">=3.11,<4.0"
-pyinaturalist = "^0.19.0"
-python-dotenv = "^1.0.1"
-tablib = "^3.5.0"
-pyinaturalist-convert = "0.5.0"
-pandas = "^2.2.1"
-pandas-stubs = "^2.2.1.240316"
-types-requests = "^2.31.0.20240406"
-requests = "^2.31.0"
-types-python-dateutil = "^2.9.0.20240316"
-pyproj = "^3.7.2"
+[project.urls]
+Repository = "https://github.com/digital-botanical-gardens-initiative/inat-fetcher"
+Documentation = "https://digital-botanical-gardens-initiative.github.io/inat-fetcher/"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.2.0"
-mypy = "^1.5.1"
-pre-commit = "^3.4.0"
-tox = "^4.11.1"
-ipykernel = "^6.30.1"
-
-
+[dependency-groups]
+dev = [
+    "ipykernel>=6.30.1",
+    "mypy>=1.5.1",
+    "pre-commit>=3.4.0",
+    "pytest>=7.2.0",
+    "tox>=4.11.1",
+]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.mypy]
 files = ["inat_fetcher"]
@@ -50,52 +50,33 @@ show_error_codes = "True"
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py37"
+target-version = "py311"
 line-length = 120
 fix = true
 select = [
-    # flake8-2020
     "YTT",
-    # flake8-bandit
     "S",
-    # flake8-bugbear
     "B",
-    # flake8-builtins
     "A",
-    # flake8-comprehensions
     "C4",
-    # flake8-debugger
     "T10",
-    # flake8-simplify
     "SIM",
-    # isort
     "I",
-    # mccabe
     "C90",
-    # pycodestyle
     "E", "W",
-    # pyflakes
     "F",
-    # pygrep-hooks
     "PGH",
-    # pyupgrade
     "UP",
-    # ruff
     "RUF",
-    # tryceratops
     "TRY",
 ]
 ignore = [
-    # LineTooLong
     "E501",
-    # DoNotAssignLambda
     "E731",
 ]
 
 [tool.ruff.format]
 preview = true
-
-
 
 [tool.ruff.per-file-ignores]
 "tests/*" = ["S101"]
