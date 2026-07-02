@@ -96,3 +96,108 @@ def test_dry_run_does_not_call_remote_dedupe_by_default(tmp_path: Path, monkeypa
     monkeypatch.delenv(pusher.ENV_TOKEN_KEY, raising=False)
 
     pusher.run(csv_path, images_root, limit=1, dry_run=True, log_file=None, state_file=None)
+
+
+def test_taxon_resolver_exact_match(monkeypatch: pytest.MonkeyPatch):
+    def fake_get_taxa(**kwargs):
+        assert kwargs["q"] == "Plantago major"
+        return {"results": [{"id": 123, "name": "Plantago major", "rank": "species"}]}
+
+    monkeypatch.setattr(pusher, "get_taxa", fake_get_taxa)
+    resolver = pusher.TaxonResolver(pusher.setup_logger(None, False))
+
+    resolution = resolver.resolve("Plantago major")
+
+    assert resolution == pusher.TaxonResolution("Plantago major", 123, "Plantago major", "species", "exact")
+
+
+def test_taxon_resolver_falls_back_to_genus(monkeypatch: pytest.MonkeyPatch):
+    calls = []
+
+    def fake_get_taxa(**kwargs):
+        calls.append(kwargs["q"])
+        if kwargs["q"] == "Fascicularia kirchhoffiana":
+            return {"results": []}
+        if kwargs["q"] == "Fascicularia":
+            return {
+                "results": [
+                    {"id": 244190, "name": "Fascicularia", "rank": "genus"},
+                    {"id": 244184, "name": "Fascicularia bicolor", "rank": "species"},
+                ]
+            }
+        raise AssertionError(kwargs["q"])
+
+    monkeypatch.setattr(pusher, "get_taxa", fake_get_taxa)
+    resolver = pusher.TaxonResolver(pusher.setup_logger(None, False))
+
+    resolution = resolver.resolve("Fascicularia kirchhoffiana")
+
+    assert calls == ["Fascicularia kirchhoffiana", "Fascicularia"]
+    assert resolution == pusher.TaxonResolution(
+        "Fascicularia kirchhoffiana",
+        244190,
+        "Fascicularia",
+        "genus",
+        "genus_fallback",
+    )
+
+
+def test_taxon_resolver_unresolved(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(pusher, "get_taxa", lambda **kwargs: {"results": []})
+    resolver = pusher.TaxonResolver(pusher.setup_logger(None, False))
+
+    assert resolver.resolve("Notataxon nowhere") == pusher.TaxonResolution(
+        "Notataxon nowhere",
+        None,
+        None,
+        None,
+        "unresolved",
+    )
+
+
+def test_taxon_resolver_lookup_failure(monkeypatch: pytest.MonkeyPatch):
+    def fake_get_taxa(**kwargs):
+        raise RuntimeError("network unavailable")
+
+    monkeypatch.setattr(pusher, "get_taxa", fake_get_taxa)
+    resolver = pusher.TaxonResolver(pusher.setup_logger(None, False))
+
+    assert resolver.resolve("Plantago major") == pusher.TaxonResolution(
+        "Plantago major",
+        None,
+        None,
+        None,
+        "lookup_failed",
+    )
+
+
+def test_build_params_includes_taxon_id_and_original_taxon_tag_on_fallback():
+    rowd = pusher.RowData(
+        sample_id="dbgi_001",
+        taxon_name="Fascicularia kirchhoffiana",
+        observed_on="2026-01-01T12:00:00",
+        latitude=50.0,
+        longitude=14.0,
+        x_coord=None,
+        y_coord=None,
+        inat_upload=1,
+        is_wild=0,
+        collector_inat="@observer",
+        collector_fullname="Observer Name",
+        collector_orcid=None,
+        project=None,
+    )
+    resolution = pusher.TaxonResolution(
+        "Fascicularia kirchhoffiana",
+        244190,
+        "Fascicularia",
+        "genus",
+        "genus_fallback",
+    )
+
+    params = pusher.build_params(rowd, [Path("dbgi_001_01.jpg")], "token", resolution)
+
+    assert params["taxon_id"] == 244190
+    assert params["species_guess"] == "Fascicularia kirchhoffiana"
+    assert "emi_original_taxon:Fascicularia kirchhoffiana" in params["tag_list"]
+    assert "Original CSV taxon: Fascicularia kirchhoffiana" in params["description"]

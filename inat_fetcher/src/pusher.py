@@ -40,6 +40,7 @@ from pyinaturalist import (
     create_observation,
     get_observations,
     get_observations_by_id,
+    get_taxa,
     upload as upload_media,
 )
 from pyinaturalist.session import get_refresh_params
@@ -100,6 +101,19 @@ class RowData:
     collector_orcid: Optional[str]
     project: Optional[str]
     photo_refs: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class TaxonResolution:
+    original_name: str
+    taxon_id: Optional[int]
+    resolved_name: Optional[str]
+    rank: Optional[str]
+    source: str
+
+    @property
+    def used_fallback(self) -> bool:
+        return self.source == "genus_fallback"
 
 
 def load_env() -> None:
@@ -262,6 +276,72 @@ def resolve_csv_path(csv_path: Path) -> Path:
     raise ValueError(f"Expected exactly one .csv in {csv_path}, found {len(candidates)}:\n{candidate_list}")
 
 
+def _normalize_taxon_name(name: str) -> str:
+    return " ".join(name.casefold().split())
+
+
+def _first_matching_taxon(results: Iterable[dict[str, Any]], expected_name: str, *, rank: Optional[str] = None) -> Optional[dict[str, Any]]:
+    expected = _normalize_taxon_name(expected_name)
+    for result in results:
+        name = result.get("name")
+        if not isinstance(name, str) or _normalize_taxon_name(name) != expected:
+            continue
+        if rank and result.get("rank") != rank:
+            continue
+        return result
+    return None
+
+
+class TaxonResolver:
+    def __init__(self, logger: logging.Logger) -> None:
+        self.logger = logger
+        self._cache: dict[str, TaxonResolution] = {}
+
+    def resolve(self, taxon_name: Optional[str]) -> Optional[TaxonResolution]:
+        if not taxon_name:
+            return None
+
+        name = " ".join(taxon_name.split())
+        key = _normalize_taxon_name(name)
+        if key in self._cache:
+            return self._cache[key]
+
+        resolution = self._resolve_uncached(name)
+        self._cache[key] = resolution
+        return resolution
+
+    def _resolve_uncached(self, name: str) -> TaxonResolution:
+        try:
+            exact = get_taxa(q=name, is_active=True, per_page=10)
+            match = _first_matching_taxon(exact.get("results", []), name)
+            if match:
+                return TaxonResolution(
+                    original_name=name,
+                    taxon_id=match.get("id"),
+                    resolved_name=match.get("name"),
+                    rank=match.get("rank"),
+                    source="exact",
+                )
+
+            genus = name.split()[0] if name.split() else ""
+            if genus and genus != name:
+                genus_resp = get_taxa(q=genus, is_active=True, per_page=10)
+                genus_match = _first_matching_taxon(genus_resp.get("results", []), genus, rank="genus")
+                if genus_match:
+                    return TaxonResolution(
+                        original_name=name,
+                        taxon_id=genus_match.get("id"),
+                        resolved_name=genus_match.get("name"),
+                        rank=genus_match.get("rank"),
+                        source="genus_fallback",
+                    )
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Taxon lookup failed for %s: %s", name, exc)
+            return TaxonResolution(name, None, None, None, "lookup_failed")
+
+        return TaxonResolution(name, None, None, None, "unresolved")
+
+
 def to_row_data(row: pd.Series) -> RowData:
     # Prefer explicit taxon_name; fallback to name_proposition when missing
     taxon = str(row.get("taxon_name", "")).strip()
@@ -293,7 +373,12 @@ def to_row_data(row: pd.Series) -> RowData:
     )
 
 
-def build_params(rowd: RowData, photos: Iterable[Path], access_token: str) -> dict:
+def build_params(
+    rowd: RowData,
+    photos: Iterable[Path],
+    access_token: str,
+    taxon_resolution: Optional[TaxonResolution] = None,
+) -> dict:
     lat, lon = rowd.latitude, rowd.longitude
     # Join tags into a comma-separated string to match API expectation
     tags = [
@@ -309,6 +394,8 @@ def build_params(rowd: RowData, photos: Iterable[Path], access_token: str) -> di
         tags.append(f"emi_collector_inat:{handle}")
     if rowd.collector_orcid:
         tags.append(f"emi_collector_orcid:{rowd.collector_orcid}")
+    if taxon_resolution and taxon_resolution.used_fallback:
+        tags.append(f"emi_original_taxon:{taxon_resolution.original_name}")
     params: dict = {
         "access_token": access_token,
         "species_guess": rowd.taxon_name,
@@ -321,12 +408,22 @@ def build_params(rowd: RowData, photos: Iterable[Path], access_token: str) -> di
         # Attach local photo paths
         "photos": [str(p) for p in photos],
     }
+    if taxon_resolution and taxon_resolution.taxon_id:
+        params["taxon_id"] = taxon_resolution.taxon_id
     # Description from collector_inat, normalized to single '@'
     if rowd.collector_inat:
         handle = rowd.collector_inat
         if not handle.startswith("@"):  # ensure single '@'
             handle = "@" + handle
         params["description"] = f"Original observer: {handle}"
+    if taxon_resolution and taxon_resolution.used_fallback:
+        fallback_note = (
+            f"Original CSV taxon: {taxon_resolution.original_name}; "
+            f"uploaded with iNaturalist taxon: {taxon_resolution.resolved_name} ({taxon_resolution.rank})."
+        )
+        params["description"] = (
+            f"{params['description']}\n{fallback_note}" if params.get("description") else fallback_note
+        )
     # Drop None values to avoid sending empty fields
     return {k: v for k, v in params.items() if v not in (None, [], "", ())}
 
@@ -402,6 +499,7 @@ def run(
     xy_epsg: str = "auto",
     index_wait_seconds: int = 120,
     index_wait_interval: int = 5,
+    resolve_taxa: bool = True,
 ) -> None:
     load_env()
     logger = setup_logger(log_file, verbose)
@@ -431,6 +529,7 @@ def run(
     logger.info("Found %d uploadable rows in %s", len(filtered), csv_path)
 
     photo_resolver = PhotoResolver(images_root)
+    taxon_resolver = TaxonResolver(logger) if resolve_taxa else None
     processed = 0
     for idx, rowd in enumerate(filtered, start=1):
         if limit is not None and processed >= limit:
@@ -517,7 +616,19 @@ def run(
         rowd.latitude, rowd.longitude = lat, lon
         logger.info("%s geolocation from x/y using EPSG:%s -> lat=%.8f lon=%.8f", rowd.sample_id, epsg_to_use, lat, lon)
 
-        params = build_params(rowd, photos, access_token=token or "")
+        taxon_resolution = taxon_resolver.resolve(rowd.taxon_name) if taxon_resolver else None
+        if taxon_resolution:
+            logger.info(
+                "%s taxon resolution: original=%s taxon_id=%s resolved=%s rank=%s source=%s",
+                rowd.sample_id,
+                taxon_resolution.original_name,
+                taxon_resolution.taxon_id,
+                taxon_resolution.resolved_name,
+                taxon_resolution.rank,
+                taxon_resolution.source,
+            )
+
+        params = build_params(rowd, photos, access_token=token or "", taxon_resolution=taxon_resolution)
         # Ensure longer timeout for uploads
         params["timeout"] = upload_timeout
         if verbose:
@@ -538,6 +649,9 @@ def run(
             print(
                 f"Dry-run {processed}{f'/{limit}' if limit else ''}: csv_row={idx}, sample_id={rowd.sample_id}, "
                 f"taxon={rowd.taxon_name}, lat/lon={params.get('latitude')},{params.get('longitude')} "
+                f"taxon_id={params.get('taxon_id')} "
+                f"taxon_source={taxon_resolution.source if taxon_resolution else 'disabled'} "
+                f"resolved_taxon={taxon_resolution.resolved_name if taxon_resolution else None} "
                 f"photos={len(photos)} photo_files={[Path(p).name for p in params.get('photos', [])]}"
             )
             continue
@@ -842,6 +956,12 @@ def main(argv: Optional[list[str]] = None) -> None:
         default=5,
         help="Polling interval (seconds) while waiting for the observation to appear",
     )
+    parser.add_argument(
+        "--resolve-taxa",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Resolve CSV taxon names to iNaturalist taxon_id, falling back to genus when exact name is missing",
+    )
     args = parser.parse_args(argv)
 
     run(
@@ -861,6 +981,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         xy_epsg=args.xy_epsg,
         index_wait_seconds=args.index_wait_seconds,
         index_wait_interval=args.index_wait_interval,
+        resolve_taxa=args.resolve_taxa,
     )
 
 

@@ -4,6 +4,7 @@
 
 - CSV directory: `/media/data/nextcloud_data/emi/files/output/csv/jbp-new`
 - Pictures root: `/media/data/nextcloud_data/emi/files/output/pictures/jbp-new/jbp-new`
+- Runtime state/log directory: `/media/data/nextcloud_data/emi/files/output/inat-pusher/jbp-new`
 - These paths are readable by `cronuser`; the current interactive user may get `Permission denied`.
 
 ## uv workflow
@@ -28,6 +29,18 @@ uv run python -m inat_fetcher.src.pusher --help
 
 ## First-three validation
 
+Preferred wrapper:
+
+```bash
+scripts/push_project.sh jbp-new 3
+```
+
+Live upload with the wrapper:
+
+```bash
+scripts/push_project.sh jbp-new 20 --live --user dbgi
+```
+
 Dry-run the first three uploadable rows that have matched photos and usable coordinates:
 
 ```bash
@@ -37,8 +50,8 @@ sudo -u cronuser uv run python -m inat_fetcher.src.pusher \
   --limit 3 \
   --dry-run \
   --verbose \
-  --state-file /tmp/inat-pusher-jbp-state.json \
-  --log-file /tmp/inat-pusher-jbp.log
+  --state-file /media/data/nextcloud_data/emi/files/output/inat-pusher/jbp-new/upload_state.json \
+  --log-file /media/data/nextcloud_data/emi/files/output/inat-pusher/jbp-new/pusher.log
 ```
 
 Live upload the same first three only after dry-run review and with an iNaturalist token available:
@@ -51,17 +64,29 @@ sudo -u cronuser env INATURALIST_ACCESS_TOKEN_TODAY="$INATURALIST_ACCESS_TOKEN_T
   --limit 3 \
   --no-dry-run \
   --verify \
-  --state-file /tmp/inat-pusher-jbp-state.json \
-  --log-file /tmp/inat-pusher-jbp.log
+  --state-file /media/data/nextcloud_data/emi/files/output/inat-pusher/jbp-new/upload_state.json \
+  --log-file /media/data/nextcloud_data/emi/files/output/inat-pusher/jbp-new/pusher.log
 ```
 
 ## Further improvements
 
 - Add `--sample-id` to target one or more exact samples for reruns.
 - Add an explicit `--csv-glob` or `--csv-latest` option if the JBP CSV directory commonly contains multiple exports.
-- Move pusher state/log defaults out of `data/inat_pictures` and into a configurable runtime directory.
 - Emit structured JSON logs for production cron runs.
 - Consider sharing the pusher photo resolver with the fetch/format pipeline so CSV picture columns and disk layout stay aligned.
+
+## Taxon resolution fallback
+
+The pusher resolves CSV taxon names to iNaturalist `taxon_id` values before upload. It first tries the full CSV taxon name. If iNaturalist has no active exact match, it tries the first word as a genus fallback.
+
+Example:
+
+- CSV taxon: `Fascicularia kirchhoffiana`
+- Exact iNaturalist lookup: no active match
+- Genus fallback: `Fascicularia`
+- Upload: sends `taxon_id` for `Fascicularia`, keeps `species_guess` as `Fascicularia kirchhoffiana`, and adds `emi_original_taxon:Fascicularia kirchhoffiana`
+
+This avoids observations becoming fully Unknown when the CSV name is a cultivar, unpublished name, or otherwise absent from iNaturalist, while preserving the original label. Disable with `--no-resolve-taxa` if needed.
 
 ## Multiple observations of the same specimen
 
