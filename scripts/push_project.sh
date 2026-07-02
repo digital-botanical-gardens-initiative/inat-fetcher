@@ -9,9 +9,11 @@ Usage:
 Examples:
   scripts/push_project.sh jbp-new 3
   scripts/push_project.sh jbp-new 20 --live --user dbgi
+  scripts/push_project.sh kew-botanical-gardens all --live --user dbgi
   scripts/push_project.sh kew-botanical-gardens 20 --allow-sample-ids /path/to/allow_sample_ids.txt
 
 Notes:
+  - Use 0, all, or unlimited for no limit.
   - Defaults to --dry-run.
   - Runs the pusher as cronuser when launched by another user.
   - Expects uv at /usr/local/bin/uv.
@@ -35,6 +37,8 @@ fi
 project="$1"
 limit="$2"
 shift 2
+limit_label="$limit"
+limit_args=()
 
 mode="--dry-run"
 inat_user="dbgi"
@@ -78,10 +82,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! [[ "$limit" =~ ^[0-9]+$ ]] || [[ "$limit" -lt 1 ]]; then
-  echo "<limit> must be a positive integer" >&2
-  exit 2
-fi
+case "$limit" in
+  0|all|unlimited)
+    limit_label="unlimited"
+    ;;
+  *)
+    if ! [[ "$limit" =~ ^[0-9]+$ ]] || [[ "$limit" -lt 1 ]]; then
+      echo "<limit> must be a positive integer, 0, all, or unlimited" >&2
+      exit 2
+    fi
+    limit_args=(--limit "$limit")
+    ;;
+esac
 
 repo_dir="/git_repos/inat-fetcher"
 csv_dir="/media/data/nextcloud_data/emi/files/output/csv/${project}"
@@ -102,7 +114,7 @@ pusher_args=(
   -m inat_fetcher.src.pusher
   --csv "$csv_dir"
   --images-root "$images_root"
-  --limit "$limit"
+  "${limit_args[@]}"
   "$mode"
   --verbose
   --verify
@@ -121,7 +133,7 @@ if [[ "$(id -un)" != "cronuser" ]]; then
 fi
 
 echo "Project: $project"
-echo "Limit: $limit"
+echo "Limit: $limit_label"
 echo "Mode: $mode"
 echo "CSV: $csv_dir"
 echo "Images: $images_root"

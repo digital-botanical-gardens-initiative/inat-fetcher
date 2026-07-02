@@ -41,6 +41,8 @@ Live upload with the wrapper:
 scripts/push_project.sh jbp-new 20 --live --user dbgi
 ```
 
+Use `0`, `all`, or `unlimited` as the limit to process all remaining observations allowed by the CSV, state file, and optional curation allow-list.
+
 Dry-run the first three uploadable rows that have matched photos and usable coordinates:
 
 ```bash
@@ -117,6 +119,12 @@ Live upload:
 
 ```bash
 scripts/push_project.sh kew-botanical-gardens 20 --live --user dbgi
+```
+
+Live upload without a limit:
+
+```bash
+scripts/push_project.sh kew-botanical-gardens all --live --user dbgi
 ```
 
 The wrapper also accepts an explicit allow-list:

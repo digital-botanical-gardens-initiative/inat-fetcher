@@ -77,6 +77,8 @@ Live upload:
 scripts/push_project.sh jbp-new 20 --live --user dbgi
 ```
 
+Use `0`, `all`, or `unlimited` as the limit to process all remaining observations allowed by the CSV, state file, and optional curation allow-list.
+
 The wrapper maps `jbp-new` to:
 
 ```text
@@ -107,4 +109,10 @@ Live upload:
 
 ```bash
 scripts/push_project.sh kew-botanical-gardens 20 --live --user dbgi
+```
+
+Live upload without a limit:
+
+```bash
+scripts/push_project.sh kew-botanical-gardens all --live --user dbgi
 ```
