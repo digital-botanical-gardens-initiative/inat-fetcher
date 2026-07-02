@@ -86,3 +86,25 @@ runtime: /media/data/nextcloud_data/emi/files/output/inat-pusher/jbp-new
 ```
 
 The runtime directory contains durable upload state and logs.
+
+## Curation allow-lists
+
+For projects with researcher curation reports, first convert the report into a plain `sample_id` allow-list. The Kew report profile accepts rows whose `Notes` value is `OK`, `no photo_05`, or `no photo _05` after normalization:
+
+```bash
+scripts/make_allowlist_from_curation.py /path/to/curation.csv --output /media/data/nextcloud_data/emi/files/output/inat-pusher/kew-botanical-gardens/allow_sample_ids.txt
+```
+
+The generator defaults to `--profile kew`; use `--id-column`, `--status-column`, and repeated `--accept-status` flags for reports with a different shape.
+
+Then run the project wrapper. If the default allow-list exists in the runtime directory, the wrapper uses it automatically:
+
+```bash
+scripts/push_project.sh kew-botanical-gardens 20
+```
+
+Live upload:
+
+```bash
+scripts/push_project.sh kew-botanical-gardens 20 --live --user dbgi
+```

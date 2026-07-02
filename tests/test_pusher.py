@@ -33,6 +33,23 @@ def test_resolve_csv_path_rejects_directory_with_multiple_csvs(tmp_path: Path):
         pusher.resolve_csv_path(tmp_path)
 
 
+def test_load_sample_id_allowlist_ignores_comments_blanks_and_duplicates(tmp_path: Path):
+    allowlist = tmp_path / "allow.txt"
+    allowlist.write_text("\n# comment\ndbgi_001\n\ndbgi_002\ndbgi_001\n")
+
+    assert pusher.load_sample_id_allowlist(allowlist) == {"dbgi_001", "dbgi_002"}
+
+
+def test_load_sample_id_allowlist_fails_closed_for_missing_or_empty_file(tmp_path: Path):
+    with pytest.raises(FileNotFoundError):
+        pusher.load_sample_id_allowlist(tmp_path / "missing.txt")
+
+    empty = tmp_path / "empty.txt"
+    empty.write_text("# no ids\n\n")
+    with pytest.raises(ValueError, match="empty"):
+        pusher.load_sample_id_allowlist(empty)
+
+
 def test_photo_resolver_uses_picture_columns_by_basename(tmp_path: Path):
     images_root = tmp_path / "images"
     photo = touch(images_root / "nested" / "Plant_dbgi_001_01.jpg")
@@ -96,6 +113,41 @@ def test_dry_run_does_not_call_remote_dedupe_by_default(tmp_path: Path, monkeypa
     monkeypatch.delenv(pusher.ENV_TOKEN_KEY, raising=False)
 
     pusher.run(csv_path, images_root, limit=1, dry_run=True, log_file=None, state_file=None)
+
+
+def test_dry_run_filters_by_allow_sample_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    images_root = tmp_path / "images"
+    touch(images_root / "dbgi_001" / "Plant_dbgi_001_01.jpg")
+    touch(images_root / "dbgi_002" / "Plant_dbgi_002_01.jpg")
+    csv_path = tmp_path / "input_EPSG:4326.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "sample_id,inat_upload,is_wild,taxon_name,date,x_coord,y_coord",
+                "dbgi_001,1,0,Plantago major,20250101,7.1,46.0",
+                "dbgi_002,1,0,Fascicularia kirchhoffiana,20250101,7.2,46.1",
+            ]
+        )
+    )
+    allowlist = tmp_path / "allow.txt"
+    allowlist.write_text("dbgi_002\n")
+
+    monkeypatch.delenv(pusher.ENV_TOKEN_KEY, raising=False)
+    pusher.run(
+        csv_path,
+        images_root,
+        limit=1,
+        dry_run=True,
+        log_file=None,
+        state_file=None,
+        allow_sample_ids=allowlist,
+        resolve_taxa=False,
+    )
+
+    output = capsys.readouterr().out
+    assert "matched 1 uploadable row(s), excluded 1 uploadable row(s)" in output
+    assert "sample_id=dbgi_002" in output
+    assert "sample_id=dbgi_001" not in output
 
 
 def test_taxon_resolver_exact_match(monkeypatch: pytest.MonkeyPatch):

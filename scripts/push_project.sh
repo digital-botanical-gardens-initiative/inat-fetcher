@@ -4,11 +4,12 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/push_project.sh <project> <limit> [--dry-run|--live] [--user <inat_user>]
+  scripts/push_project.sh <project> <limit> [--dry-run|--live] [--user <inat_user>] [--allow-sample-ids <path>]
 
 Examples:
   scripts/push_project.sh jbp-new 3
   scripts/push_project.sh jbp-new 20 --live --user dbgi
+  scripts/push_project.sh kew-botanical-gardens 20 --allow-sample-ids /path/to/allow_sample_ids.txt
 
 Notes:
   - Defaults to --dry-run.
@@ -18,6 +19,8 @@ Notes:
     or otherwise visible to cronuser.
 EOF
 }
+
+original_args=("$@")
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   usage
@@ -35,6 +38,7 @@ shift 2
 
 mode="--dry-run"
 inat_user="dbgi"
+allow_sample_ids=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -52,6 +56,14 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       inat_user="$2"
+      shift 2
+      ;;
+    --allow-sample-ids)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --allow-sample-ids" >&2
+        exit 2
+      fi
+      allow_sample_ids="$2"
       shift 2
       ;;
     -h|--help)
@@ -78,9 +90,16 @@ safe_project="${project//[^A-Za-z0-9_.-]/_}"
 runtime_dir="/media/data/nextcloud_data/emi/files/output/inat-pusher/${safe_project}"
 state_file="${runtime_dir}/upload_state.json"
 log_file="${runtime_dir}/pusher.log"
+default_allow_sample_ids="${runtime_dir}/allow_sample_ids.txt"
+
+if [[ -z "$allow_sample_ids" && "$project" == "kew-botanical-gardens" ]]; then
+  allow_sample_ids="$default_allow_sample_ids"
+elif [[ -z "$allow_sample_ids" && -f "$default_allow_sample_ids" ]]; then
+  allow_sample_ids="$default_allow_sample_ids"
+fi
 
 pusher_args=(
-  python -m inat_fetcher.src.pusher
+  -m inat_fetcher.src.pusher
   --csv "$csv_dir"
   --images-root "$images_root"
   --limit "$limit"
@@ -92,7 +111,14 @@ pusher_args=(
   --log-file "$log_file"
 )
 
-cmd="mkdir -p '$runtime_dir' && cd '$repo_dir' && PATH=/usr/local/bin:/usr/bin:/bin UV_PROJECT_ENVIRONMENT=/home/cronuser/.venvs/inat-fetcher uv run ${pusher_args[*]@Q}"
+if [[ -n "$allow_sample_ids" ]]; then
+  pusher_args+=(--allow-sample-ids "$allow_sample_ids")
+fi
+
+if [[ "$(id -un)" != "cronuser" ]]; then
+  quoted_args=$(printf ' %q' "${original_args[@]}")
+  exec su - cronuser -c "cd '$repo_dir' && PATH=/usr/local/bin:/usr/bin:/bin UV_PROJECT_ENVIRONMENT=/home/cronuser/.venvs/inat-fetcher scripts/push_project.sh$quoted_args"
+fi
 
 echo "Project: $project"
 echo "Limit: $limit"
@@ -102,9 +128,12 @@ echo "Images: $images_root"
 echo "Runtime: $runtime_dir"
 echo "State: $state_file"
 echo "Log: $log_file"
-
-if [[ "$(id -un)" == "cronuser" ]]; then
-  bash -lc "$cmd"
-else
-  su - cronuser -c "$cmd"
+if [[ -n "$allow_sample_ids" ]]; then
+  echo "Allow-list: $allow_sample_ids"
 fi
+
+mkdir -p "$runtime_dir"
+cd "$repo_dir"
+export PATH=/usr/local/bin:/usr/bin:/bin
+export UV_PROJECT_ENVIRONMENT=/home/cronuser/.venvs/inat-fetcher
+uv run python "${pusher_args[@]}"

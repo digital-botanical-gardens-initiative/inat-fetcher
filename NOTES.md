@@ -88,6 +88,43 @@ Example:
 
 This avoids observations becoming fully Unknown when the CSV name is a cultivar, unpublished name, or otherwise absent from iNaturalist, while preserving the original label. Disable with `--no-resolve-taxa` if needed.
 
+## Curation-gated uploads
+
+Curation reports should be normalized to a simple `sample_id` allow-list before upload. This keeps the pusher independent from report-specific spreadsheet formats.
+
+Kew report policy:
+
+- join key: `sample_id`
+- status column: `Notes`
+- accepted statuses after normalization: `OK`, `no photo_05`, `no photo _05`
+- current report inspection: 642 curation rows, 410 accepted sample IDs, all 410 present in the local `kew-botanical-gardens` upload CSV
+
+Generate the allow-list from a downloaded report:
+
+```bash
+scripts/make_allowlist_from_curation.py /path/to/curation.csv --output /media/data/nextcloud_data/emi/files/output/inat-pusher/kew-botanical-gardens/allow_sample_ids.txt
+```
+
+The generator defaults to `--profile kew`; use `--id-column`, `--status-column`, and repeated `--accept-status` flags when a future curation report uses different column names or accepted states.
+
+Dry-run with the default allow-list:
+
+```bash
+scripts/push_project.sh kew-botanical-gardens 20
+```
+
+Live upload:
+
+```bash
+scripts/push_project.sh kew-botanical-gardens 20 --live --user dbgi
+```
+
+The wrapper also accepts an explicit allow-list:
+
+```bash
+scripts/push_project.sh kew-botanical-gardens 20 --allow-sample-ids /path/to/allow_sample_ids.txt
+```
+
 ## Multiple observations of the same specimen
 
 iNaturalist's help page says an observation records an encounter between an observer and an organism, so multiple people may each make observations of the same organism. The practical caveat is that iNaturalist observation counts should not be treated as exact abundance counts. Community discussion also supports this interpretation: duplicate observations by different observers are generally acceptable, especially when each observer had the encounter and is building their own record.

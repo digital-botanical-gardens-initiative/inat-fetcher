@@ -276,6 +276,22 @@ def resolve_csv_path(csv_path: Path) -> Path:
     raise ValueError(f"Expected exactly one .csv in {csv_path}, found {len(candidates)}:\n{candidate_list}")
 
 
+def load_sample_id_allowlist(path: Path) -> set[str]:
+    if not path.exists():
+        raise FileNotFoundError(f"Sample ID allow-list does not exist: {path}")
+
+    allowed: set[str] = set()
+    for line in path.read_text().splitlines():
+        value = line.strip()
+        if not value or value.startswith("#"):
+            continue
+        allowed.add(value)
+
+    if not allowed:
+        raise ValueError(f"Sample ID allow-list is empty: {path}")
+    return allowed
+
+
 def _normalize_taxon_name(name: str) -> str:
     return " ".join(name.casefold().split())
 
@@ -500,6 +516,7 @@ def run(
     index_wait_seconds: int = 120,
     index_wait_interval: int = 5,
     resolve_taxa: bool = True,
+    allow_sample_ids: Optional[Path] = None,
 ) -> None:
     load_env()
     logger = setup_logger(log_file, verbose)
@@ -521,12 +538,39 @@ def run(
             state = {}
 
     df = pd.read_csv(csv_path)
-    rows = (to_row_data(r) for _, r in df.iterrows())
+    rows = [to_row_data(r) for _, r in df.iterrows()]
     # Keep only rows marked for upload and with a sample_id
     filtered = [r for r in rows if r.inat_upload and r.sample_id]
+    uploadable_count = len(filtered)
+
+    allowed_ids: Optional[set[str]] = None
+    if allow_sample_ids:
+        allowed_ids = load_sample_id_allowlist(allow_sample_ids)
+        before_filter = len(filtered)
+        filtered = [r for r in filtered if r.sample_id in allowed_ids]
+        missing_allowed = allowed_ids - {r.sample_id for r in rows if r.sample_id}
+        print(
+            f"Loaded {len(allowed_ids)} allowed sample_id(s) from {allow_sample_ids}; "
+            f"matched {len(filtered)} uploadable row(s), excluded {before_filter - len(filtered)} uploadable row(s)."
+        )
+        logger.info(
+            "Allow-list %s loaded: allowed=%d uploadable_before=%d matched=%d excluded=%d missing_allowed=%d",
+            allow_sample_ids,
+            len(allowed_ids),
+            before_filter,
+            len(filtered),
+            before_filter - len(filtered),
+            len(missing_allowed),
+        )
+        if missing_allowed:
+            logger.warning(
+                "Allow-list has %d sample_id(s) not present in CSV, first values: %s",
+                len(missing_allowed),
+                sorted(missing_allowed)[:20],
+            )
 
     print(f"Found {len(filtered)} uploadable row(s) in {csv_path}.")
-    logger.info("Found %d uploadable rows in %s", len(filtered), csv_path)
+    logger.info("Found %d uploadable rows in %s (before allow-list=%d)", len(filtered), csv_path, uploadable_count)
 
     photo_resolver = PhotoResolver(images_root)
     taxon_resolver = TaxonResolver(logger) if resolve_taxa else None
@@ -962,6 +1006,12 @@ def main(argv: Optional[list[str]] = None) -> None:
         default=True,
         help="Resolve CSV taxon names to iNaturalist taxon_id, falling back to genus when exact name is missing",
     )
+    parser.add_argument(
+        "--allow-sample-ids",
+        type=Path,
+        default=None,
+        help="Optional file containing one sample_id per line; only these sample IDs will be processed",
+    )
     args = parser.parse_args(argv)
 
     run(
@@ -982,6 +1032,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         index_wait_seconds=args.index_wait_seconds,
         index_wait_interval=args.index_wait_interval,
         resolve_taxa=args.resolve_taxa,
+        allow_sample_ids=args.allow_sample_ids,
     )
 
 
